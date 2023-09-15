@@ -1,5 +1,4 @@
 
-// TODO: Add simple calculation (single operator)
 // TODO: Add complex calculation 1 (Multiple operators)
 // TODO: Add complex calculation 2 (Order of operations)
 // TODO: Add complex calculation 3 (Parentheses)
@@ -33,7 +32,7 @@ pub mod calc {
                         last_processed = indx_char.0 as i32;
                         indx_char = indcs_chars.next().unwrap();
                     }
-                    tokens.push(Token::Num(&expr[index..last_processed as usize + 1]))
+                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].to_owned()))
                 },
                 a if a.is_alphabetic() => { // TODO: Or if a is '\'? (to start function identifier)
                     // If it is a letter, walk through the next characters until it is not a letter, 
@@ -43,7 +42,7 @@ pub mod calc {
                         last_processed = indx_char.0 as i32;
                         indx_char = indcs_chars.next().unwrap();
                     }
-                    tokens.push(Token::Identifier(&expr[index..last_processed as usize + 1]))
+                    tokens.push(Token::Identifier(expr[index..last_processed as usize + 1].to_owned()))
                     // TODO: Call `unimplemented!()` macro here
                 },
                 o if !o.is_alphabetic() && !o.is_numeric() => {
@@ -51,7 +50,7 @@ pub mod calc {
                     // add the _single_ character to `tokens` as a `Token::Operator`
                     println!("(I, C): `{indx_char:?}`");
                     last_processed = indx_char.0 as i32;
-                    tokens.push(Token::Operator(&expr[index..last_processed as usize + 1]))
+                    tokens.push(Token::Operator(expr[index..last_processed as usize + 1].to_owned()))
                 },
                 // If it is none of these, do nothing
                 _ => (),
@@ -65,30 +64,96 @@ pub mod calc {
     /// Generate a `Token` from a given `&Vec<Token>`
     /// 
     /// # Panics
-    /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Operator, Token::Num]`
-    pub fn simple_calc<'a>(tokens: &Vec<Token<'a>>) -> Token<'a> {
+    /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Operator, Token::Num]`, or if the operator is not valid
+    pub fn simple_calc<'a>(tokens: &Vec<Token>) -> Token {
 
         let token_values = extract_token_values(tokens);
-        let res;
+        println!("Tokens values passed to `simple_calc`: {token_values:?}");
 
-        match token_values.1 {
-            "+" => {res = Token::Num("Add");},
-            "-" => {res = Token::Num("Sub");},
-            "*" => {res = Token::Num("Mul");},
-            "/" => {res = Token::Num("Div");},
-            _ => {res = Token::Num("Error");},
-        }
+        let left: i32 = token_values.0.parse().unwrap();
+        let right: i32 = token_values.2.parse().unwrap();
 
-        println!("Ts: {token_values:?}");
+        let res = match token_values.1.as_str() {
+            "+" => Token::Num((left+right).to_string()),
+            "-" => Token::Num((left-right).to_string()),
+            "*" => Token::Num((left*right).to_string()),
+            "/" => Token::Num((left/right).to_string()),
+            "%" => Token::Num((left%right).to_string()),
+            "^" => Token::Num(left.pow(right.try_into().unwrap()).to_string()),
+            _ =>   panic!("Error: Invalid operator."),
+        };
 
+        println!("Result of `simple_calc`: {res:?}");
         res
     }
 
-    /// Generates a `(&str, &str, &str)` containing the values of the given `&Vec<Token>`
+    pub fn calculate(tokens: &Vec<Token>) -> Token {
+        let mut tokens = tokens.clone();
+
+        // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
+
+        // Calculate and substitute parentheses
+
+        
+        println!("Started `calculate`");
+        for i in 0..tokens.len() {
+            // TODO: .get token from index, check if out of bounds, 
+
+            let token;
+
+            // Get check if index is out of bounds, get token
+            match tokens.get(i) {
+                None => {
+                    println!("Got to end of tokens");
+                    break;
+                },
+                Some(t) => token = t.clone(),
+            }
+
+            print!("\n\n");
+            println!("Tokens: {tokens:?}");
+            println!("Token at index `{i}`: {:?}", token);
+
+            // FIXME: Is this unnecessary?
+            if tokens.len() == 1 {
+                return tokens[0].clone();
+            }
+
+            // FIXME: This MIGHT work, untested
+            if token == Token::Operator("(".to_string()) {
+                let mut j = i;
+
+                while tokens[j] != Token::Operator(")".to_string()) {
+                    j += 1;
+                }
+
+                let subsection = &Vec::from(&tokens[i..j+1]);
+
+                let res = calculate(subsection);
+
+                tokens.drain(i..j+1);
+                tokens.insert(i, res);
+            }
+
+            if let Token::Operator(_) = &token {
+                println!("Token is an operator");
+                let res = simple_calc(&Vec::from(&tokens[i-1..i+2]));
+
+                println!("Range to be deleted: {:?}", i-1..i+2);
+
+                tokens.drain(i-1..i+2);
+                tokens.insert(i-1, res);
+            }
+        }
+
+        tokens[0].clone()
+    }
+
+    /// Generates a `(String, String, String)` containing the same values as the given `&Vec<Token>`
     /// 
     /// # Panics
     /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Operator, Token::Num]`
-    fn extract_token_values<'a>(tokens: &Vec<Token<'a>>) -> (&'a str, &'a str, &'a str) {
+    fn extract_token_values<'a>(tokens: &Vec<Token>) -> (String, String, String) {
         // FIXME: Add better error handling
 
         let token0;
@@ -101,31 +166,33 @@ pub mod calc {
         }
 
         // Verify tokens and extract values
-        if let Token::Num(t) = tokens[0] {
+        if let Token::Num(t) = &tokens[0] {
             token0 = t;
         } else {
             panic!("First token must be a `Token::Num`")
         }
-        if let Token::Operator(t) = tokens[1] {
+        if let Token::Operator(t) = &tokens[1] {
             token1 = t;
         } else {
             panic!("Middle token must be a `Token::Operator`")
         }
-        if let Token::Num(t) = tokens[2] {
+        if let Token::Num(t) = &tokens[2] {
             token2 = t;
         } else {
             panic!("Last token must be a `Token::Num`")
         }
 
-        (token0, token1, token2)
+        (token0.to_owned(), token1.to_owned(), token2.to_owned())
     }
 
     /// Represents a token in a mathematical expression
-    #[derive(Debug, PartialEq)]
-    pub enum Token<'a> {
-        Num(&'a str),
-        Operator(&'a str),
-        Identifier(&'a str),
+    #[derive(Debug, PartialEq, Clone)]
+    pub enum Token {
+        Num(String),
+        Operator(String),
+        Identifier(String),
     }
+
+    
 
 }
