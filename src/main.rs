@@ -1,6 +1,6 @@
 use std::io;
 
-use string_calc::calc::tokenize;
+use string_calc::calc::{tokenize, simple_calc};
 
 fn main() {
 
@@ -8,7 +8,9 @@ fn main() {
 
     io::stdin().read_line(&mut input_expr).expect("");
 
-    for token in tokenize(&input_expr) {
-        println!("{token:?}")
-    }
+    let tokens = tokenize(&input_expr);
+
+    let res = simple_calc(&tokens);
+
+    println!("Res: {res:?}");
 }
