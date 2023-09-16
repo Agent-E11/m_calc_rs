@@ -1,9 +1,10 @@
 
-// TODO: Add complex calculation 1 (Multiple operators)
+// TODO: Add "calculate operator" function (takes a `Vec<Token>` and calculates all occurrences of a given operator)
 // TODO: Add complex calculation 2 (Order of operations)
-// TODO: Add complex calculation 3 (Parentheses)
 // TODO: Add support for decimal numbers
 // TODO: Create an `Error` enum: (Length error, parsing error, other?)
+// TODO: Add support for some functions (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions?)
+// TODO: Add support for identifiers / variables (also `;`?)
 
 pub mod calc {
 
@@ -73,6 +74,7 @@ pub mod calc {
         let left: i32 = token_values.0.parse().unwrap();
         let right: i32 = token_values.2.parse().unwrap();
 
+        // Perform operation based on operator
         let res = match token_values.1.as_str() {
             "+" => Token::Num((left+right).to_string()),
             "-" => Token::Num((left-right).to_string()),
@@ -87,24 +89,26 @@ pub mod calc {
         res
     }
 
+    /// Takes a `&Vec<Token>` and computes the mathematical expression and returns the resulting number wrapped in a `Token::Num()`
+    /// 
+    /// # Panics
+    /// Panics if 
     pub fn calculate(tokens: &Vec<Token>) -> Token {
         let mut tokens = tokens.clone();
 
         // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
-
-        // Calculate and substitute parentheses
-
-        
         println!("Started `calculate`");
-        for i in 0..tokens.len() {
-            // TODO: .get token from index, check if out of bounds, 
 
+        // First pass: Calculate and substitute parentheses
+        println!("Starting \"Parentheses\" pass");
+        let mut i = 0;
+        loop {
             let token;
 
-            // Get check if index is out of bounds, get token
+            // Check if index is out of bounds, get token
             match tokens.get(i) {
                 None => {
-                    println!("Got to end of tokens");
+                    println!("Index out of bounds. Going to next pass");
                     break;
                 },
                 Some(t) => token = t.clone(),
@@ -114,26 +118,66 @@ pub mod calc {
             println!("Tokens: {tokens:?}");
             println!("Token at index `{i}`: {:?}", token);
 
-            // FIXME: Is this unnecessary?
-            if tokens.len() == 1 {
-                return tokens[0].clone();
-            }
-
-            // FIXME: This MIGHT work, untested
+            // Find an open parentheses
             if token == Token::Operator("(".to_string()) {
+                println!("Open parentheses at {i}");
                 let mut j = i;
 
-                while tokens[j] != Token::Operator(")".to_string()) {
+                // Find index of closing parentheses
+                let mut open_parens = 1;
+                loop {
                     j += 1;
+                    if let Token::Operator(o) = &tokens[j] {
+                        match o.as_str() {
+                            "(" => open_parens += 1,
+                            ")" => open_parens -= 1,
+                            _ => (),
+                        }
+                    }
+                    if open_parens == 0 {
+                        break;
+                    }
                 }
 
-                let subsection = &Vec::from(&tokens[i..j+1]);
+                println!("Closing parentheses at {j}");
 
+                let subsection = &Vec::from(&tokens[i+1..j]);
+                println!("Subsection passed to `calculate`: {subsection:?}");
+
+                // Calculate subsection
                 let res = calculate(subsection);
 
+                println!("Range to be deleted: {:?}", i..j+1);
+
+                // Replace subsection with calculation
                 tokens.drain(i..j+1);
                 tokens.insert(i, res);
+
+                // Go back to beginning of `tokens` and keep searching
+                i = 0;
+                continue;
             }
+
+            i += 1;
+        }
+
+        // Second pass: operators(?) TODO:
+        println!("Starting \"Operator\" pass");
+        let mut i = 0;
+        loop {
+            let token;
+
+            match tokens.get(i) {
+                None => {
+                    println!("Index out of bounds, going to next pass");
+                    break;
+                },
+                Some(t) => token = t.clone(),
+            }
+            
+            print!("\n\n");
+            println!("Tokens: {tokens:?}");
+            println!("Token at index `{i}`: {:?}", token);
 
             if let Token::Operator(_) = &token {
                 println!("Token is an operator");
@@ -143,11 +187,16 @@ pub mod calc {
 
                 tokens.drain(i-1..i+2);
                 tokens.insert(i-1, res);
+
+                i = 0;
+                continue;
             }
+
+            i += 1;
         }
 
         tokens[0].clone()
-    }
+    } 
 
     /// Generates a `(String, String, String)` containing the same values as the given `&Vec<Token>`
     /// 
@@ -192,7 +241,4 @@ pub mod calc {
         Operator(String),
         Identifier(String),
     }
-
-    
-
 }
