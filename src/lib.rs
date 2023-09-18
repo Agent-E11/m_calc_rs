@@ -1,9 +1,10 @@
 
-// TODO: Add "calculate operator" function (takes a `Vec<Token>` and calculates all occurrences of a given operator)
+// TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
 // TODO: Add complex calculation 2 (Order of operations)
+// TODO: Add support for implicit multiplication (function that takes a `Vec<Token>` and converts all of its implicit multiplication to explicit)
 // TODO: Add support for decimal numbers
 // TODO: Create an `Error` enum: (Length error, parsing error, other?)
-// TODO: Add support for some functions (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions?)
+// TODO: Add support for some functions (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions, maybe multiple variable functions?) (Add this inside of the Parentheses pass?)
 // TODO: Add support for identifiers / variables (also `;`?)
 
 pub mod calc {
@@ -87,6 +88,35 @@ pub mod calc {
 
         println!("Result of `simple_calc`: {res:?}");
         res
+    }
+
+    /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
+    pub fn calculate_operator(tokens: Vec<Token>, operator: &str) -> Vec<Token> {
+        let mut tokens = tokens;
+        let mut i = 0;
+        loop {
+            if tokens.get(i) == None {
+                break;
+            }
+            if let Token::Operator(o) = &tokens[i] {
+                println!("Operator `{o}` at `{i}`");
+                if o == operator {
+                    println!("Operator matches");
+                    println!("Calculating: {:?}", &tokens[i-1..i+2]);
+                    let res = simple_calc(&Vec::from(&tokens[i-1..i+2]));
+                    println!("Result: {res:?}");
+                    println!("Deleting: {:?}", &tokens[i-1..i+2]);
+
+                    tokens.drain(i-1..i+2);
+                    tokens.insert(i-1, res);
+
+                    i = 0;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        tokens
     }
 
     /// Takes a `&Vec<Token>` and computes the mathematical expression and returns the resulting number wrapped in a `Token::Num()`

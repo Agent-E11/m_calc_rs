@@ -1,6 +1,6 @@
 use std::io;
 
-use string_calc::calc::{tokenize, calculate};
+use string_calc::calc::{tokenize, calculate, calculate_operator};
 
 fn main() {
 
@@ -10,7 +10,7 @@ fn main() {
 
     let tokens = tokenize(&input_expr);
 
-    let res = calculate(&tokens);
+    let res = calculate_operator(tokens, "*");
 
     println!("Res: {res:?}");
 }
