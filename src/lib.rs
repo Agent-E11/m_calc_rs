@@ -1,12 +1,11 @@
 
-// TODO: Get rid of redundant "non-number" checks in `simple_calc`
-// TODO: Replace `String`s in Token with `f32`s and enums (where appropriate)
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
 // TODO: Add complex calculation 2 (Order of operations)
 // TODO: Add support for implicit multiplication
 //      (function that takes a `Vec<Token>` and converts all of its implicit multiplication to explicit)
 //      (this happens after the "parentheses" pass, and just inserts a `Token::Op("*")` between any two `Token::Num()`)
 // TODO: Create an `Error` enum: (Length error (including length of 0), parsing error, other?)
+
 // TODO: Add support for some functions (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions, maybe multiple variable functions?) (Add this inside of the Parentheses pass?)
 // TODO: Add support for identifiers / variables (also `;`?)
 
@@ -164,7 +163,7 @@ pub mod calc {
     /// 
     /// # Panics
     /// Panics if 
-    pub fn calculate(tokens: &Vec<Token>) -> Token { // TODO: Address Clippy issue
+    pub fn calculate(tokens: &Vec<Token>) -> Token { // TODO: Address Clippy issue (no `drain` method)
         let mut tokens = tokens.clone();
 
         // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
@@ -344,6 +343,7 @@ pub mod calc {
     mod tests {
         use super::*;
         use super::Token::{Num, Op, Id};
+        use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub};
 
         use std::panic::catch_unwind;
 
@@ -356,26 +356,26 @@ pub mod calc {
                 tokenize(expr1),
                 vec![
                     Num(6.0),
-                    Op( Oper::Exp),
+                    Op( Exp),
                     Num(8.0),
-                    Op( Oper::Mul),
-                    Op( Oper::LPar),
+                    Op( Mul),
+                    Op( LPar),
                     Num(4.0),
-                    Op( Oper::Sub),
+                    Op( Sub),
                     Num(1.0),
-                    Op( Oper::RPar),
-                    Op( Oper::Mul),
-                    Op( Oper::LPar),
+                    Op( RPar),
+                    Op( Mul),
+                    Op( LPar),
                     Num(3.0),
-                    Op( Oper::Mod),
+                    Op( Mod),
                     Num(2.0),
-                    Op( Oper::Add),
-                    Op( Oper::LPar),
+                    Op( Add),
+                    Op( LPar),
                     Num(4.0),
-                    Op( Oper::Mul),
+                    Op( Mul),
                     Num(2.0),
-                    Op( Oper::RPar),
-                    Op( Oper::RPar),
+                    Op( RPar),
+                    Op( RPar),
                 ]
             );
 
@@ -384,18 +384,18 @@ pub mod calc {
                 vec![
                     Id("abc".to_string()),
                     Num(123.0),
-                    Op(Oper::Mod),
-                    Op(Oper::Exp),
-                    Op(Oper::Mul),
+                    Op(Mod),
+                    Op(Exp),
+                    Op(Mul),
                 ]
             )
         }
 
         #[test]
         fn test_simple_calc() {
-            let tokens1 = &vec![Num(2.0), Op(Oper::Mul), Num(4.0)];
-            let tokens2 = &vec![Num(3.0), Op(Oper::Mod), Num(2.0)];
-            let tokens3 = &vec![Num(4.0), Op(Oper::Exp), Num(4.0)];
+            let tokens1 = &vec![Num(2.0), Op(Mul), Num(4.0)];
+            let tokens2 = &vec![Num(3.0), Op(Mod), Num(2.0)];
+            let tokens3 = &vec![Num(4.0), Op(Exp), Num(4.0)];
 
             assert_eq!(simple_calc(tokens1), Num(8.0));
             assert_eq!(simple_calc(tokens2), Num(1.0));
@@ -421,20 +421,20 @@ pub mod calc {
         fn test_calculate_operator() {
             let tokens1 = vec![
                 Num(2.0),
-                Op( Oper::Exp),
+                Op( Exp),
                 Num(2.0),
-                Op( Oper::Add),
+                Op( Add),
                 Num(5.0)
             ];
 
             assert_eq!(
-                calculate_operator(tokens1.clone(), Oper::Exp),
-                vec![Num(4.0), Op(Oper::Add), Num(5.0)]
+                calculate_operator(tokens1.clone(), Exp),
+                vec![Num(4.0), Op(Add), Num(5.0)]
             );
 
             assert_eq!(
-                calculate_operator(tokens1, Oper::Add),
-                vec![Num(2.0), Op(Oper::Exp), Num(7.0)]
+                calculate_operator(tokens1, Add),
+                vec![Num(2.0), Op(Exp), Num(7.0)]
             );
         }
 
