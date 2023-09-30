@@ -1,6 +1,6 @@
 use std::io;
 
-use string_calc::calc::{tokenize, calculate, calculate_operator};
+use string_calc::calc::{tokenize, calculate, convert_div_sub};
 
 fn main() {
 
@@ -9,8 +9,15 @@ fn main() {
     io::stdin().read_line(&mut input_expr).expect("");
 
     let tokens = tokenize(&input_expr);
+    println!("Tokens: {tokens:?}");
 
-    let res = calculate_operator(tokens, "*");
+    let converted = convert_div_sub(tokens.clone());
+    println!("Converted: {converted:?}");
 
-    println!("Res: {res:?}");
+    let c_res = calculate(&converted);
+
+    let u_res = calculate(&tokens);
+    println!("");
+    println!("Unconverted res: {u_res:?}");
+    println!("Converted res: {c_res:?}");
 }
