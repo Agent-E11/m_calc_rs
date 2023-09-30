@@ -1,18 +1,19 @@
 
+// TODO: Get rid of redundant "non-number" checks in `simple_calc`
 // TODO: Replace `String`s in Token with `f32`s and enums (where appropriate)
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
 // TODO: Add complex calculation 2 (Order of operations)
 // TODO: Add support for implicit multiplication
 //      (function that takes a `Vec<Token>` and converts all of its implicit multiplication to explicit)
 //      (this happens after the "parentheses" pass, and just inserts a `Token::Op("*")` between any two `Token::Num()`)
-// TODO: Create an `Error` enum: (Length error, parsing error, other?)
+// TODO: Create an `Error` enum: (Length error (including length of 0), parsing error, other?)
 // TODO: Add support for some functions (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions, maybe multiple variable functions?) (Add this inside of the Parentheses pass?)
 // TODO: Add support for identifiers / variables (also `;`?)
 
 pub mod calc {
 
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
-    pub fn tokenize<'a>(expr: &'a str) -> Vec<Token> {
+    pub fn tokenize(expr: &str) -> Vec<Token> {
         let mut tokens: Vec<Token> = Vec::new();
         let mut last_processed: i32 = -1;
 
@@ -36,7 +37,7 @@ pub mod calc {
                         last_processed = indx_char.0 as i32;
                         indx_char = indcs_chars.next().unwrap();
                     }
-                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].to_owned()))
+                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>().unwrap())) // TODO: handle errors
                 },
                 a if a.is_alphabetic() => { // TODO: Or if a is '\'? (to start function identifier)
                     // If it is a letter, walk through the next characters until it is not a letter, 
@@ -54,7 +55,7 @@ pub mod calc {
                     // add the _single_ character to `tokens` as a `Token::Op`
                     println!("(I, C): `{indx_char:?}`");
                     last_processed = indx_char.0 as i32;
-                    tokens.push(Token::Op(expr[index..last_processed as usize + 1].to_owned()))
+                    tokens.push(Token::Op(Oper::from(&expr[index..last_processed as usize + 1])))
                 },
                 // If it is none of these, do nothing
                 _ => (),
@@ -69,23 +70,24 @@ pub mod calc {
     /// 
     /// # Panics
     /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Op, Token::Num]`, or if the operator is not valid
-    pub fn simple_calc<'a>(tokens: &Vec<Token>) -> Token {
+    pub fn simple_calc(tokens: &Vec<Token>) -> Token {
 
         let token_values = extract_token_values(tokens);
         println!("Tokens values passed to `simple_calc`: {token_values:?}");
 
-        let left: f32 = token_values.0.parse().unwrap();
-        let right: f32 = token_values.2.parse().unwrap();
+        let left = token_values.0;
+        let right = token_values.2;
 
         // Perform operation based on operator
-        let res = match token_values.1.as_str() {
-            "+" => Token::Num((left+right).to_string()),
-            "-" => Token::Num((left-right).to_string()),
-            "*" => Token::Num((left*right).to_string()),
-            "/" => Token::Num((left/right).to_string()),
-            "%" => Token::Num((left%right).to_string()),
-            "^" => Token::Num(left.powf(right.try_into().unwrap()).to_string()),
-            _ =>   panic!("Error: Invalid operator."),
+        let res = match token_values.1 {
+            Oper::Exp => Token::Num(left.powf(right)),
+            Oper::Mul => Token::Num(left*right),
+            Oper::Div => Token::Num(left/right),
+            Oper::Mod => Token::Num(left%right),
+            Oper::Add => Token::Num(left+right),
+            Oper::Sub => Token::Num(left-right),
+            Oper::LPar => panic!("Error: Invalid operator."),
+            Oper::RPar => panic!("Error: Invalid operator."),
         };
 
         println!("Result of `simple_calc`: {res:?}");
@@ -104,19 +106,19 @@ pub mod calc {
             };
 
             if let Token::Op(o) = token {
-                match o.as_str() {
-                    "/" => {
+                match o {
+                    Oper::Div => {
                         println!("Div found at `{i}`");
                         if let Token::Num(n) = tokens[i+1].clone() {
-                            tokens[i] = Token::Op("*".to_string());
-                            tokens[i+1] = Token::Num((1.0/n.parse::<f32>().unwrap()).to_string());
+                            tokens[i] = Token::Op(Oper::Mul);
+                            tokens[i+1] = Token::Num(1.0/n);
                         }
                     },
-                    "-" => {
+                    Oper::Sub => {
                         println!("Sub found at `{i}`");
                         if let Token::Num(n) = tokens[i+1].clone() {
-                            tokens[i] = Token::Op("+".to_string());
-                            tokens[i+1] = Token::Num((-n.parse::<f32>().unwrap()).to_string());
+                            tokens[i] = Token::Op(Oper::Add);
+                            tokens[i+1] = Token::Num(-n);
                         }
                     },
                     _ => (),
@@ -130,16 +132,16 @@ pub mod calc {
     }
 
     /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
-    pub fn calculate_operator(tokens: Vec<Token>, operator: &str) -> Vec<Token> {
+    pub fn calculate_operator(tokens: Vec<Token>, operator: Oper) -> Vec<Token> {
         let mut tokens = tokens;
         let mut i = 0;
         loop {
-            if tokens.get(i) == None {
+            if tokens.get(i).is_none() {
                 break;
             }
             if let Token::Op(o) = &tokens[i] {
                 println!("Operator `{o}` at `{i}`");
-                if o == operator {
+                if o == &operator {
                     println!("Operator matches");
                     println!("Calculating: {:?}", &tokens[i-1..i+2]);
                     let res = simple_calc(&Vec::from(&tokens[i-1..i+2]));
@@ -162,7 +164,7 @@ pub mod calc {
     /// 
     /// # Panics
     /// Panics if 
-    pub fn calculate(tokens: &Vec<Token>) -> Token {
+    pub fn calculate(tokens: &Vec<Token>) -> Token { // TODO: Address Clippy issue
         let mut tokens = tokens.clone();
 
         // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
@@ -172,23 +174,23 @@ pub mod calc {
         println!("Starting \"Parentheses\" pass");
         let mut i = 0;
         loop {
-            let token;
+            
 
             // Check if index is out of bounds, get token
-            match tokens.get(i) {
+            let token = match tokens.get(i) {
                 None => {
                     println!("Index out of bounds. Going to next pass");
                     break;
                 },
-                Some(t) => token = t.clone(),
-            }
+                Some(t) => t.clone(),
+            };
 
             print!("\n\n");
             println!("Tokens: {tokens:?}");
             println!("Token at index `{i}`: {:?}", token);
 
             // Find an open parentheses
-            if token == Token::Op("(".to_string()) {
+            if token == Token::Op(Oper::LPar) {
                 println!("Open parentheses at {i}");
                 let mut j = i;
 
@@ -197,9 +199,9 @@ pub mod calc {
                 loop {
                     j += 1;
                     if let Token::Op(o) = &tokens[j] {
-                        match o.as_str() {
-                            "(" => open_parens += 1,
-                            ")" => open_parens -= 1,
+                        match o {
+                            Oper::LPar => open_parens += 1,
+                            Oper::RPar => open_parens -= 1,
                             _ => (),
                         }
                     }
@@ -218,6 +220,7 @@ pub mod calc {
 
                 println!("Range to be deleted: {:?}", i..j+1);
 
+
                 // Replace subsection with calculation
                 tokens.drain(i..j+1);
                 tokens.insert(i, res);
@@ -233,16 +236,19 @@ pub mod calc {
         // Second pass: operators
         println!("Starting \"Operator\" pass");
 
+        // TODO: Have `calculate_tokens` accept a list of `Oper` (for the "mul, div, mod" and "add, sub" passes)
         println!("Tokens before pass: {tokens:?}");
-        tokens = calculate_operator(tokens, "^");
+        tokens = calculate_operator(tokens, Oper::Exp);
         println!("After `^`: {tokens:?}");
-        tokens = calculate_operator(tokens, "*");
+        tokens = calculate_operator(tokens, Oper::Mul);
         println!("After `*`: {tokens:?}");
-        tokens = calculate_operator(tokens, "/");
+        tokens = calculate_operator(tokens, Oper::Div);
         println!("After `/`: {tokens:?}");
-        tokens = calculate_operator(tokens, "+");
+        tokens = calculate_operator(tokens, Oper::Mod);
+        println!("After `%`: {tokens:?}");
+        tokens = calculate_operator(tokens, Oper::Add);
         println!("After `+`: {tokens:?}");
-        tokens = calculate_operator(tokens, "-");
+        tokens = calculate_operator(tokens, Oper::Sub);
         println!("After `-`: {tokens:?}");
 
         tokens[0].clone()
@@ -252,7 +258,7 @@ pub mod calc {
     /// 
     /// # Panics
     /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Op, Token::Num]`
-    fn extract_token_values<'a>(tokens: &Vec<Token>) -> (String, String, String) {
+    fn extract_token_values(tokens: &Vec<Token>) -> (f32, Oper, f32) {
         // FIXME: Add better error handling
 
         let token0;
@@ -281,17 +287,49 @@ pub mod calc {
             panic!("Last token must be a `Token::Num`")
         }
 
-        (token0.to_owned(), token1.to_owned(), token2.to_owned())
+        (*token0, token1.clone(), *token2)
+    }
+
+    /// Represents a mathematical operator
+    #[derive(Debug, PartialEq, Clone)]
+    pub enum Oper {
+        LPar, // Left parentheses
+        RPar, // RIght parentheses
+        Exp, // Exponent
+        Mul, // Multiply
+        Div, // Divide
+        Mod, // Modulus
+        Add, // Add
+        Sub, // Subtract
+    }
+    impl From<&str> for Oper {
+        fn from(value: &str) -> Self {
+            match value {
+                "(" => Oper::LPar,
+                ")" => Oper::RPar,
+                "^" => Oper::Exp,
+                "*" => Oper::Mul,
+                "/" => Oper::Div,
+                "%" => Oper::Mod,
+                "+" => Oper::Add,
+                "-" => Oper::Sub,
+                _ => panic!(),
+            }
+        }
+    }
+    impl std::fmt::Display for Oper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{self:?}")
+        }
     }
 
     /// Represents a token in a mathematical expression
     #[derive(Debug, PartialEq, Clone)]
     pub enum Token {
-        Num(String),
-        Op(String),
+        Num(f32),
+        Op(Oper),
         Id(String),
     }
-
     impl std::fmt::Display for Token {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
@@ -312,32 +350,32 @@ pub mod calc {
         #[test]
         fn test_tokenize() {
             let expr1 = "6^8*(4-1)*(3%2+(4*2))";
-            let expr2 = "abc123!@#";
+            let expr2 = "abc123%^*";
 
             assert_eq!(
                 tokenize(expr1),
                 vec![
-                    Num("6".to_string()),
-                    Op( "^".to_string()),
-                    Num("8".to_string()),
-                    Op( "*".to_string()),
-                    Op( "(".to_string()),
-                    Num("4".to_string()),
-                    Op( "-".to_string()),
-                    Num("1".to_string()),
-                    Op( ")".to_string()),
-                    Op( "*".to_string()),
-                    Op( "(".to_string()),
-                    Num("3".to_string()),
-                    Op( "%".to_string()),
-                    Num("2".to_string()),
-                    Op( "+".to_string()),
-                    Op( "(".to_string()),
-                    Num("4".to_string()),
-                    Op( "*".to_string()),
-                    Num("2".to_string()),
-                    Op( ")".to_string()),
-                    Op( ")".to_string()),
+                    Num(6.0),
+                    Op( Oper::Exp),
+                    Num(8.0),
+                    Op( Oper::Mul),
+                    Op( Oper::LPar),
+                    Num(4.0),
+                    Op( Oper::Sub),
+                    Num(1.0),
+                    Op( Oper::RPar),
+                    Op( Oper::Mul),
+                    Op( Oper::LPar),
+                    Num(3.0),
+                    Op( Oper::Mod),
+                    Num(2.0),
+                    Op( Oper::Add),
+                    Op( Oper::LPar),
+                    Num(4.0),
+                    Op( Oper::Mul),
+                    Num(2.0),
+                    Op( Oper::RPar),
+                    Op( Oper::RPar),
                 ]
             );
 
@@ -345,58 +383,58 @@ pub mod calc {
                 tokenize(expr2),
                 vec![
                     Id("abc".to_string()),
-                    Num("123".to_string()),
-                    Op("!".to_string()),
-                    Op("@".to_string()),
-                    Op("#".to_string()),
+                    Num(123.0),
+                    Op(Oper::Mod),
+                    Op(Oper::Exp),
+                    Op(Oper::Mul),
                 ]
             )
         }
 
         #[test]
         fn test_simple_calc() {
-            let tokens1 = &vec![Num("2".to_string()), Op("*".to_string()), Num("4".to_string())];
-            let tokens2 = &vec![Num("3".to_string()), Op("%".to_string()), Num("2".to_string())];
-            let tokens3 = &vec![Num("4".to_string()), Op("^".to_string()), Num("4".to_string())];
+            let tokens1 = &vec![Num(2.0), Op(Oper::Mul), Num(4.0)];
+            let tokens2 = &vec![Num(3.0), Op(Oper::Mod), Num(2.0)];
+            let tokens3 = &vec![Num(4.0), Op(Oper::Exp), Num(4.0)];
 
-            assert_eq!(simple_calc(tokens1), Num("8".to_string()));
-            assert_eq!(simple_calc(tokens2), Num("1".to_string()));
-            assert_eq!(simple_calc(tokens3), Num("256".to_string()));
+            assert_eq!(simple_calc(tokens1), Num(8.0));
+            assert_eq!(simple_calc(tokens2), Num(1.0));
+            assert_eq!(simple_calc(tokens3), Num(256.0));
         }
 
         #[test]
         fn test_panic_simple_calc() {
-            let tokens1 = &vec![Num("1".to_string())]; // Wrong length
-            let tokens2 = &vec![Num("2".to_string()), Num("2".to_string()), Num("2".to_string())]; // Wrong operator
-            let tokens3 = &vec![Num("a".to_string()), Op("*".to_string()), Num("1".to_string())]; // Non-number
+            let tokens1 = &vec![Num(4.0)]; // Wrong length
+            let tokens2 = &vec![Num(2.0), Num(2.0), Num(2.0)]; // Wrong operator
+            // let tokens3 = &vec![Num(), Op("*".to_string()), Num("1".to_string())]; // Non-number
 
             let res1 = catch_unwind(|| {simple_calc(tokens1)});
             let res2 = catch_unwind(|| {simple_calc(tokens2)});
-            let res3 = catch_unwind(|| {simple_calc(tokens3)});
+            // let res3 = catch_unwind(|| {simple_calc(tokens3)});
 
             assert!(res1.is_err());
             assert!(res2.is_err());
-            assert!(res3.is_err());
+            // assert!(res3.is_err());
         }
 
         #[test]
         fn test_calculate_operator() {
             let tokens1 = vec![
-                Num("2".to_string()),
-                Op( "^".to_string()),
-                Num("2".to_string()),
-                Op( "+".to_string()),
-                Num("5".to_string())
+                Num(2.0),
+                Op( Oper::Exp),
+                Num(2.0),
+                Op( Oper::Add),
+                Num(5.0)
             ];
 
             assert_eq!(
-                calculate_operator(tokens1.clone(), "^"),
-                vec![Num("4".to_string()), Op("+".to_string()), Num("5".to_string())]
+                calculate_operator(tokens1.clone(), Oper::Exp),
+                vec![Num(4.0), Op(Oper::Add), Num(5.0)]
             );
 
             assert_eq!(
-                calculate_operator(tokens1.clone(), "+"),
-                vec![Num("2".to_string()), Op("^".to_string()), Num("7".to_string())]
+                calculate_operator(tokens1, Oper::Add),
+                vec![Num(2.0), Op(Oper::Exp), Num(7.0)]
             );
         }
 
