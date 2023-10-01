@@ -1,4 +1,3 @@
-
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
 // TODO: Add complex calculation 2 (Order of operations)
 // TODO: Add support for implicit multiplication
@@ -11,8 +10,10 @@
 
 pub mod calc {
 
+
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
-    pub fn tokenize(expr: &str) -> Vec<Token> {
+    pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcError> {
+
         let mut tokens: Vec<Token> = Vec::new();
         let mut last_processed: i32 = -1;
 
@@ -34,9 +35,9 @@ pub mod calc {
                     while indx_char.1.is_numeric() || indx_char.1 == '.' {
                         println!("(I, C): `{indx_char:?}`");
                         last_processed = indx_char.0 as i32;
-                        indx_char = indcs_chars.next().unwrap();
+                        indx_char = indcs_chars.next().unwrap(); // TODO: Should this just ignore any `None` value?
                     }
-                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>().unwrap())) // TODO: handle errors
+                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?)) // TODO: handle errors
                 },
                 a if a.is_alphabetic() => { // TODO: Or if a is '\'? (to start function identifier)
                     // If it is a letter, walk through the next characters until it is not a letter, 
@@ -44,7 +45,7 @@ pub mod calc {
                     while indx_char.1.is_alphabetic() {
                         println!("(I, C): `{indx_char:?}`");
                         last_processed = indx_char.0 as i32;
-                        indx_char = indcs_chars.next().unwrap();
+                        indx_char = indcs_chars.next().unwrap(); // TODO: Should this just ignore any `None` value?
                     }
                     tokens.push(Token::Id(expr[index..last_processed as usize + 1].to_owned()))
                     // TODO: Call `unimplemented!()` macro here
@@ -57,21 +58,22 @@ pub mod calc {
                     tokens.push(Token::Op(Oper::from(&expr[index..last_processed as usize + 1])))
                 },
                 // If it is none of these, do nothing
-                _ => (),
+                _ => (), // TODO: Should this return an error?
             }
         }
 
         println!("Token list: {tokens:?}");
-        tokens
+        Ok(tokens)
     }
 
     /// Generate a `Token` from a given `&Vec<Token>`
     /// 
     /// # Panics
     /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Op, Token::Num]`, or if the operator is not valid
-    pub fn simple_calc(tokens: &Vec<Token>) -> Token {
+    pub fn simple_calc(tokens: &Vec<Token>) -> Result<Token, CalcError> {
+        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
 
-        let token_values = extract_token_values(tokens);
+        let token_values = extract_token_values(tokens)?;
         println!("Tokens values passed to `simple_calc`: {token_values:?}");
 
         let left = token_values.0;
@@ -79,14 +81,14 @@ pub mod calc {
 
         // Perform operation based on operator
         let res = match token_values.1 {
-            Oper::Exp => Token::Num(left.powf(right)),
-            Oper::Mul => Token::Num(left*right),
-            Oper::Div => Token::Num(left/right),
-            Oper::Mod => Token::Num(left%right),
-            Oper::Add => Token::Num(left+right),
-            Oper::Sub => Token::Num(left-right),
-            Oper::LPar => panic!("Error: Invalid operator."),
-            Oper::RPar => panic!("Error: Invalid operator."),
+            Oper::Exp => Ok(Token::Num(left.powf(right))),
+            Oper::Mul => Ok(Token::Num(left*right)),
+            Oper::Div => Ok(Token::Num(left/right)),
+            Oper::Mod => Ok(Token::Num(left%right)),
+            Oper::Add => Ok(Token::Num(left+right)),
+            Oper::Sub => Ok(Token::Num(left-right)),
+            Oper::LPar => Err(CalcError::Parse(String::from("`(` is an invalid operator"))),
+            Oper::RPar => Err(CalcError::Parse(String::from("`)` is an invalid operator"))),
         };
 
         println!("Result of `simple_calc`: {res:?}");
@@ -94,7 +96,8 @@ pub mod calc {
     }
 
     /// Takes a `Vec<Token>` and converts all occurrences of division and subtraction to their equivalents in multiplication and addition
-    pub fn convert_div_sub(tokens: Vec<Token>) -> Vec<Token> {
+    pub fn convert_div_sub(tokens: Vec<Token>) -> Result<Vec<Token>, CalcError> {
+        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
         let mut tokens = tokens;
         
         let mut i = 0;
@@ -108,16 +111,22 @@ pub mod calc {
                 match o {
                     Oper::Div => {
                         println!("Div found at `{i}`");
-                        if let Token::Num(n) = tokens[i+1].clone() {
-                            tokens[i] = Token::Op(Oper::Mul);
-                            tokens[i+1] = Token::Num(1.0/n);
+                        match tokens[i+1].clone() {
+                            Token::Num(n) => {
+                                tokens[i] = Token::Op(Oper::Mul);
+                                tokens[i+1] = Token::Num(1.0/n);
+                            },
+                            _ => return Err(CalcError::Parse(format!("token at index `{} (after `/`) is not a `Token::Num`", i + 1)))
                         }
                     },
                     Oper::Sub => {
                         println!("Sub found at `{i}`");
-                        if let Token::Num(n) = tokens[i+1].clone() {
-                            tokens[i] = Token::Op(Oper::Add);
-                            tokens[i+1] = Token::Num(-n);
+                        match tokens[i+1].clone() {
+                            Token::Num(n) => {
+                                tokens[i] = Token::Op(Oper::Add);
+                                tokens[i+1] = Token::Num(-n);
+                            },
+                            _ => return Err(CalcError::Parse(format!("token at index `{} (after `-`) is not a `Token::Num`", i + 1)))
                         }
                     },
                     _ => (),
@@ -127,11 +136,13 @@ pub mod calc {
             i += 1;
         }
 
-        tokens
+        Ok(tokens)
     }
 
     /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
-    pub fn calculate_operator(tokens: Vec<Token>, operator: Oper) -> Vec<Token> {
+    pub fn calculate_operator(tokens: Vec<Token>, operator: Oper) -> Result<Vec<Token>, CalcError> {
+        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
+
         let mut tokens = tokens;
         let mut i = 0;
         loop {
@@ -143,7 +154,7 @@ pub mod calc {
                 if o == &operator {
                     println!("Operator matches");
                     println!("Calculating: {:?}", &tokens[i-1..i+2]);
-                    let res = simple_calc(&Vec::from(&tokens[i-1..i+2]));
+                    let res = simple_calc(&Vec::from(&tokens[i-1..i+2]))?;
                     println!("Result: {res:?}");
                     println!("Deleting: {:?}", &tokens[i-1..i+2]);
 
@@ -156,14 +167,15 @@ pub mod calc {
             }
             i += 1;
         }
-        tokens
+        Ok(tokens)
     }
 
     /// Takes a `&Vec<Token>` and computes the mathematical expression and returns the resulting number wrapped in a `Token::Num()`
     /// 
     /// # Panics
     /// Panics if 
-    pub fn calculate(tokens: &Vec<Token>) -> Token { // TODO: Address Clippy issue (no `drain` method)
+    pub fn calculate(tokens: &Vec<Token>) -> Result<Token, CalcError> { // TODO: Address Clippy issue (no `drain` method)
+        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
         let mut tokens = tokens.clone();
 
         // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
@@ -173,7 +185,6 @@ pub mod calc {
         println!("Starting \"Parentheses\" pass");
         let mut i = 0;
         loop {
-            
 
             // Check if index is out of bounds, get token
             let token = match tokens.get(i) {
@@ -215,7 +226,7 @@ pub mod calc {
                 println!("Subsection passed to `calculate`: {subsection:?}");
 
                 // Calculate subsection
-                let res = calculate(subsection);
+                let res = calculate(subsection)?;
 
                 println!("Range to be deleted: {:?}", i..j+1);
 
@@ -237,27 +248,28 @@ pub mod calc {
 
         // TODO: Have `calculate_tokens` accept a list of `Oper` (for the "mul, div, mod" and "add, sub" passes)
         println!("Tokens before pass: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Exp);
+        tokens = calculate_operator(tokens, Oper::Exp)?;
         println!("After `^`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Mul);
+        tokens = calculate_operator(tokens, Oper::Mul)?;
         println!("After `*`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Div);
+        tokens = calculate_operator(tokens, Oper::Div)?;
         println!("After `/`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Mod);
+        tokens = calculate_operator(tokens, Oper::Mod)?;
         println!("After `%`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Add);
+        tokens = calculate_operator(tokens, Oper::Add)?;
         println!("After `+`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Sub);
+        tokens = calculate_operator(tokens, Oper::Sub)?;
         println!("After `-`: {tokens:?}");
 
-        tokens[0].clone()
+        Ok(tokens[0].clone())
     } 
 
     /// Generates a `(String, String, String)` containing the same values as the given `&Vec<Token>`
     /// 
     /// # Panics
     /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Op, Token::Num]`
-    fn extract_token_values(tokens: &Vec<Token>) -> (f32, Oper, f32) {
+    fn extract_token_values(tokens: &Vec<Token>) -> Result<(f32, Oper, f32), CalcError> {
+        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
         // FIXME: Add better error handling
 
         let token0;
@@ -266,27 +278,27 @@ pub mod calc {
 
         // Verify length
         if tokens.len() != 3 {
-            panic!("Length must be 3");
+            return Err(CalcError::Length(String::from("Length must be 3")));
         }
 
         // Verify tokens and extract values
         if let Token::Num(t) = &tokens[0] {
             token0 = t;
         } else {
-            panic!("First token must be a `Token::Num`")
+            return Err(CalcError::Parse(String::from("First token must be a `Token::Num`")));
         }
         if let Token::Op(t) = &tokens[1] {
             token1 = t;
         } else {
-            panic!("Middle token must be a `Token::Op`")
+            return Err(CalcError::Parse(String::from("Middle token must be a `Token::Op`")));
         }
         if let Token::Num(t) = &tokens[2] {
             token2 = t;
         } else {
-            panic!("Last token must be a `Token::Num`")
+            return Err(CalcError::Parse(String::from("Last token must be a `Token::Num`")));
         }
 
-        (*token0, token1.clone(), *token2)
+        Ok((*token0, token1.clone(), *token2))
     }
 
     /// Represents a mathematical operator
@@ -339,6 +351,18 @@ pub mod calc {
         }
     }
 
+    /// Represents possible errors when calculating
+    #[derive(Debug)]
+    pub enum CalcError {
+        Length(String),
+        Parse(String),
+    }
+    impl From<std::num::ParseFloatError> for CalcError {
+        fn from(value: <f32 as std::str::FromStr>::Err) -> Self {
+            CalcError::Parse(value.to_string())
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -353,7 +377,7 @@ pub mod calc {
             let expr2 = "abc123%^*";
 
             assert_eq!(
-                tokenize(expr1),
+                tokenize(expr1).unwrap(),
                 vec![
                     Num(6.0),
                     Op( Exp),
@@ -380,7 +404,7 @@ pub mod calc {
             );
 
             assert_eq!(
-                tokenize(expr2),
+                tokenize(expr2).unwrap(),
                 vec![
                     Id("abc".to_string()),
                     Num(123.0),
@@ -397,9 +421,9 @@ pub mod calc {
             let tokens2 = &vec![Num(3.0), Op(Mod), Num(2.0)];
             let tokens3 = &vec![Num(4.0), Op(Exp), Num(4.0)];
 
-            assert_eq!(simple_calc(tokens1), Num(8.0));
-            assert_eq!(simple_calc(tokens2), Num(1.0));
-            assert_eq!(simple_calc(tokens3), Num(256.0));
+            assert_eq!(simple_calc(tokens1).unwrap(), Num(8.0));
+            assert_eq!(simple_calc(tokens2).unwrap(), Num(1.0));
+            assert_eq!(simple_calc(tokens3).unwrap(), Num(256.0));
         }
 
         #[test]
@@ -428,12 +452,12 @@ pub mod calc {
             ];
 
             assert_eq!(
-                calculate_operator(tokens1.clone(), Exp),
+                calculate_operator(tokens1.clone(), Exp).unwrap(),
                 vec![Num(4.0), Op(Add), Num(5.0)]
             );
 
             assert_eq!(
-                calculate_operator(tokens1, Add),
+                calculate_operator(tokens1, Add).unwrap(),
                 vec![Num(2.0), Op(Exp), Num(7.0)]
             );
         }

@@ -8,10 +8,10 @@ fn main() {
 
     io::stdin().read_line(&mut input_expr).expect("");
 
-    let tokens = tokenize(&input_expr);
+    let tokens = tokenize(&input_expr).unwrap();
     println!("Tokens: {tokens:?}");
 
-    let converted = convert_div_sub(tokens.clone());
+    let converted = convert_div_sub(tokens.clone()).unwrap();
     println!("Converted: {converted:?}");
 
     let c_res = calculate(&converted);
