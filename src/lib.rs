@@ -2,14 +2,12 @@
 // TODO: Add complex calculation 2 (Order of operations)
 // TODO: Add support for implicit multiplication
 //      (function that takes a `Vec<Token>` and converts all of its implicit multiplication to explicit)
-//      (this happens after the "parentheses" pass, and just inserts a `Token::Op("*")` between any two `Token::Num()`)
-// TODO: Create an `Error` enum: (Length error (including length of 0), parsing error, other?)
+//      (this happens after the "parentheses" pass, and just inserts a `Token::Op(Oper::Mul)` between any two `Token::Num()` or `Token::Id`)
 
 // TODO: Add support for some functions (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions, maybe multiple variable functions?) (Add this inside of the Parentheses pass?)
 // TODO: Add support for identifiers / variables (also `;`?)
 
 pub mod calc {
-
 
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
     pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcError> {
@@ -25,7 +23,7 @@ pub mod calc {
             }
 
             let mut indcs_chars = expr.char_indices();
-            let mut indx_char = indcs_chars.nth(index).unwrap(); // Should never panic
+            let mut indx_char = indcs_chars.nth(index).unwrap();
 
             // Match the character in the `indx_char` tuple
             match indx_char.1 {
@@ -35,9 +33,12 @@ pub mod calc {
                     while indx_char.1.is_numeric() || indx_char.1 == '.' {
                         println!("(I, C): `{indx_char:?}`");
                         last_processed = indx_char.0 as i32;
-                        indx_char = indcs_chars.next().unwrap(); // TODO: Should this just ignore any `None` value?
+                        indx_char = match indcs_chars.next() {
+                            Some(i_c) => i_c,
+                            None => return Err(CalcError::Parse(String::from("Index out of bounds"))),
+                        };
                     }
-                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?)) // TODO: handle errors
+                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?));
                 },
                 a if a.is_alphabetic() => { // TODO: Or if a is '\'? (to start function identifier)
                     // If it is a letter, walk through the next characters until it is not a letter, 
@@ -45,10 +46,13 @@ pub mod calc {
                     while indx_char.1.is_alphabetic() {
                         println!("(I, C): `{indx_char:?}`");
                         last_processed = indx_char.0 as i32;
-                        indx_char = indcs_chars.next().unwrap(); // TODO: Should this just ignore any `None` value?
+                        indx_char = match indcs_chars.next() {
+                            Some(i_c) => i_c,
+                            None => return Err(CalcError::Parse(String::from("Index out of bounds"))),
+                        };
                     }
                     tokens.push(Token::Id(expr[index..last_processed as usize + 1].to_owned()))
-                    // TODO: Call `unimplemented!()` macro here
+                    // TODO: Call `unimplemented!()` macro here?
                 },
                 o if !o.is_alphabetic() && !o.is_numeric() => {
                     // If it neither a number, nor a letter,
@@ -57,8 +61,8 @@ pub mod calc {
                     last_processed = indx_char.0 as i32;
                     tokens.push(Token::Op(Oper::from(&expr[index..last_processed as usize + 1])))
                 },
-                // If it is none of these, do nothing
-                _ => (), // TODO: Should this return an error?
+                // If it is none of these, return an error
+                _ => return Err(CalcError::Parse(String::from("Invalid character in expression"))),
             }
         }
 
@@ -369,8 +373,6 @@ pub mod calc {
         use super::Token::{Num, Op, Id};
         use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub};
 
-        use std::panic::catch_unwind;
-
         #[test]
         fn test_tokenize() {
             let expr1 = "6^8*(4-1)*(3%2+(4*2))";
@@ -424,21 +426,6 @@ pub mod calc {
             assert_eq!(simple_calc(tokens1).unwrap(), Num(8.0));
             assert_eq!(simple_calc(tokens2).unwrap(), Num(1.0));
             assert_eq!(simple_calc(tokens3).unwrap(), Num(256.0));
-        }
-
-        #[test]
-        fn test_panic_simple_calc() {
-            let tokens1 = &vec![Num(4.0)]; // Wrong length
-            let tokens2 = &vec![Num(2.0), Num(2.0), Num(2.0)]; // Wrong operator
-            // let tokens3 = &vec![Num(), Op("*".to_string()), Num("1".to_string())]; // Non-number
-
-            let res1 = catch_unwind(|| {simple_calc(tokens1)});
-            let res2 = catch_unwind(|| {simple_calc(tokens2)});
-            // let res3 = catch_unwind(|| {simple_calc(tokens3)});
-
-            assert!(res1.is_err());
-            assert!(res2.is_err());
-            // assert!(res3.is_err());
         }
 
         #[test]
