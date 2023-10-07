@@ -1,3 +1,4 @@
+// TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
 // TODO: Add complex calculation 2 (Order of operations)
 // TODO: Add support for implicit multiplication
@@ -247,6 +248,8 @@ pub mod calc {
             i += 1;
         }
 
+        tokens = convert_implicit_mul(tokens)?;
+
         // Second pass: operators
         println!("Starting \"Operator\" pass");
 
@@ -264,6 +267,11 @@ pub mod calc {
         println!("After `+`: {tokens:?}");
         tokens = calculate_operator(tokens, Oper::Sub)?;
         println!("After `-`: {tokens:?}");
+
+        // If we end up with multiple tokens at the end, return an error
+        if tokens.len() > 1 || !matches!(tokens[0], Token::Num(_)) {
+            return Err(CalcError::Parse(String::from("calculation error, final result was not a single `Token::Num`")));
+        }
 
         Ok(tokens[0].clone())
     } 
@@ -303,6 +311,37 @@ pub mod calc {
         }
 
         Ok((*token0, token1.clone(), *token2))
+    }
+
+    pub fn convert_implicit_mul(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcError> {
+        // Return error if `tokens` contains parentheses
+        if tokens.contains(&Token::Op(Oper::LPar)) || tokens.contains(&Token::Op(Oper::RPar)) {
+            return Err(CalcError::Parse(String::from("cannot call `convert_implicit_mul` on a `Vec<Token>` that contains parentheses")));
+        }
+
+        // Insert `Token::Op(Oper::Mul)` between any `Token::Num` or `Token::Id`
+        let mut i = 0;
+        loop {
+
+            match tokens[i] {
+                Token::Num(_) | Token::Id(_) => match tokens.get(i+1) {
+                    Some(t) => match t {
+                        Token::Num(_) | Token::Id(_) => {
+                            tokens.insert(i+1, Token::Op(Oper::Mul));
+                            i = 0;
+                            continue;
+                        },
+                        Token::Op(_) => (),
+                    },
+                    None => break,
+                },
+                Token::Op(_) => (),
+            }
+
+            i += 1;
+        }
+
+        Ok(tokens)
     }
 
     /// Represents a mathematical operator
@@ -382,26 +421,26 @@ pub mod calc {
                 tokenize(expr1).unwrap(),
                 vec![
                     Num(6.0),
-                    Op( Exp),
+                    Op(Exp),
                     Num(8.0),
-                    Op( Mul),
-                    Op( LPar),
+                    Op(Mul),
+                    Op(LPar),
                     Num(4.0),
-                    Op( Sub),
+                    Op(Sub),
                     Num(1.0),
-                    Op( RPar),
-                    Op( Mul),
-                    Op( LPar),
+                    Op(RPar),
+                    Op(Mul),
+                    Op(LPar),
                     Num(3.0),
-                    Op( Mod),
+                    Op(Mod),
                     Num(2.0),
-                    Op( Add),
-                    Op( LPar),
+                    Op(Add),
+                    Op(LPar),
                     Num(4.0),
-                    Op( Mul),
+                    Op(Mul),
                     Num(2.0),
-                    Op( RPar),
-                    Op( RPar),
+                    Op(RPar),
+                    Op(RPar),
                 ]
             );
 
@@ -451,7 +490,14 @@ pub mod calc {
 
         #[test]
         fn test_calculate() {
-            todo!();
+            let tokens1 = vec![Num(4.0), Op(Add), Num(2.0), Op(Mul), Num(2.0)]; // Order of operations
+            let tokens2 = vec![Num(2.0), Op(Sub), Num(3.0), Op(Add), Num(4.0), Op(Mod), Num(5.0), Op(Div), Num(6.0), Op(Mul), Num(7.0), Op(Exp), Num(8.0)];
+            let tokens3 = vec![Op(LPar), Num(4.0), Op(Add), Num(2.0), Op(RPar), Op(Mul), Num(2.0)]; // Parentheses
+            // let tokens4 = vec!;
+            // let tokens5 = vec!;
+
+            assert_eq!(Token::Num(8.0), calculate(&tokens1).unwrap());
+            assert_eq!(Token::Num(3843199.6666), calculate(&tokens2).unwrap()); // Is this correct?
         }
     }
 }
