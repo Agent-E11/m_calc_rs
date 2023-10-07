@@ -1,5 +1,3 @@
-// TODO: Change `CalcError` from an enum to a struct. Rename to `CalcErr`
-
 // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
 // TODO: Add complex calculation 2 (Order of operations)
@@ -10,9 +8,11 @@
 // TODO: Add support for identifiers / variables (also `;`?)
 
 pub mod calc {
+    use std::num::ParseFloatError;
+
 
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
-    pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcError> {
+    pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcErr> {
 
         let mut tokens: Vec<Token> = Vec::new();
         let mut last_processed: i32 = -1;
@@ -37,7 +37,7 @@ pub mod calc {
                         last_processed = indx_char.0 as i32;
                         indx_char = match indcs_chars.next() {
                             Some(i_c) => i_c,
-                            None => return Err(CalcError::Parse(String::from("Index out of bounds"))),
+                            None => return Err(CalcErr::from("Index out of bounds")),
                         };
                     }
                     tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?));
@@ -50,7 +50,7 @@ pub mod calc {
                         last_processed = indx_char.0 as i32;
                         indx_char = match indcs_chars.next() {
                             Some(i_c) => i_c,
-                            None => return Err(CalcError::Parse(String::from("Index out of bounds"))),
+                            None => return Err(CalcErr::from("Index out of bounds")),
                         };
                     }
                     tokens.push(Token::Id(expr[index..last_processed as usize + 1].to_owned()))
@@ -64,7 +64,7 @@ pub mod calc {
                     tokens.push(Token::Op(Oper::from(&expr[index..last_processed as usize + 1])))
                 },
                 // If it is none of these, return an error
-                _ => return Err(CalcError::Parse(String::from("Invalid character in expression"))),
+                _ => return Err(CalcErr::from("Invalid character in expression")),
             }
         }
 
@@ -73,11 +73,8 @@ pub mod calc {
     }
 
     /// Generate a `Token` from a given `&Vec<Token>`
-    /// 
-    /// # Panics
-    /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Op, Token::Num]`, or if the operator is not valid
-    pub fn simple_calc(tokens: &Vec<Token>) -> Result<Token, CalcError> {
-        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
+    pub fn simple_calc(tokens: &Vec<Token>) -> Result<Token, CalcErr> {
+        if tokens.is_empty() { return Err(CalcErr::from("Length cannot be `0`")); }
 
         let token_values = extract_token_values(tokens)?;
         println!("Tokens values passed to `simple_calc`: {token_values:?}");
@@ -93,9 +90,9 @@ pub mod calc {
             Oper::Mod => Ok(Token::Num(left%right)),
             Oper::Add => Ok(Token::Num(left+right)),
             Oper::Sub => Ok(Token::Num(left-right)),
-            Oper::LPar => Err(CalcError::Parse(String::from("`(` is an invalid calculation operator"))),
-            Oper::RPar => Err(CalcError::Parse(String::from("`)` is an invalid calculation operator"))),
-            Oper::FnStart => Err(CalcError::Parse(String::from("`\\` is an invalid calculation operator"))),
+            Oper::LPar => Err(CalcErr::from("`(` is an invalid calculation operator")),
+            Oper::RPar => Err(CalcErr::from("`)` is an invalid calculation operator")),
+            Oper::FnStart => Err(CalcErr::from("`\\` is an invalid calculation operator")),
         };
 
         println!("Result of `simple_calc`: {res:?}");
@@ -103,8 +100,8 @@ pub mod calc {
     }
 
     /// Takes a `Vec<Token>` and converts all occurrences of division and subtraction to their equivalents in multiplication and addition
-    pub fn convert_div_sub(tokens: Vec<Token>) -> Result<Vec<Token>, CalcError> {
-        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
+    pub fn convert_div_sub(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
+        if tokens.is_empty() { return Err(CalcErr::from("Length cannot be `0`")); }
         let mut tokens = tokens;
         
         let mut i = 0;
@@ -123,7 +120,7 @@ pub mod calc {
                                 tokens[i] = Token::Op(Oper::Mul);
                                 tokens[i+1] = Token::Num(1.0/n);
                             },
-                            _ => return Err(CalcError::Parse(format!("token at index `{} (after `/`) is not a `Token::Num`", i + 1)))
+                            _ => return Err(CalcErr(format!("token at index `{} (after `/`) is not a `Token::Num`", i + 1)))
                         }
                     },
                     Oper::Sub => {
@@ -133,7 +130,7 @@ pub mod calc {
                                 tokens[i] = Token::Op(Oper::Add);
                                 tokens[i+1] = Token::Num(-n);
                             },
-                            _ => return Err(CalcError::Parse(format!("token at index `{} (after `-`) is not a `Token::Num`", i + 1)))
+                            _ => return Err(CalcErr(format!("token at index `{} (after `-`) is not a `Token::Num`", i + 1)))
                         }
                     },
                     _ => (),
@@ -146,9 +143,24 @@ pub mod calc {
         Ok(tokens)
     }
 
+    /// Takes a `Vec<Token>` and replaces all occurrences of `Op(FnStart), Id(), Op(LPar), ... , Op(RPar)` with `Fn(Func(...))`
+    pub fn parse_functions(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
+        let mut i = 0;
+        loop {
+            if tokens[0] == Token::Op(Oper::FnStart) {
+                let id_str = if let Token::Id(id) = &tokens[i+1] {
+                    id
+                } else {
+                    return Err(CalcErr(format!("`{}` is an invalid function id", tokens[i])));
+                };                
+            }
+            i += 1;
+        }
+    }
+
     /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
-    pub fn calculate_operator(tokens: Vec<Token>, operators: &[Oper]) -> Result<Vec<Token>, CalcError> {
-        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
+    pub fn calculate_operator(tokens: Vec<Token>, operators: &[Oper]) -> Result<Vec<Token>, CalcErr> {
+        if tokens.is_empty() { return Err(CalcErr::from("Length cannot be `0`")); }
 
         let mut tokens = tokens;
         let mut i = 0;
@@ -178,11 +190,8 @@ pub mod calc {
     }
 
     /// Takes a `&Vec<Token>` and computes the mathematical expression and returns the resulting number wrapped in a `Token::Num()`
-    /// 
-    /// # Panics
-    /// Panics if 
-    pub fn calculate(tokens: &Vec<Token>) -> Result<Token, CalcError> { // TODO: Address Clippy issue (no `drain` method)
-        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
+    pub fn calculate(tokens: &Vec<Token>) -> Result<Token, CalcErr> { // TODO: Address Clippy issue (no `drain` method)
+        if tokens.is_empty() { return Err(CalcErr::from("Length cannot be `0`")); }
         let mut tokens = tokens.clone();
 
         // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
@@ -265,18 +274,15 @@ pub mod calc {
 
         // If we end up with multiple tokens at the end, return an error
         if tokens.len() > 1 || !matches!(tokens[0], Token::Num(_)) {
-            return Err(CalcError::Parse(String::from("calculation error, final result was not a single `Token::Num`")));
+            return Err(CalcErr::from("calculation error, final result was not a single `Token::Num`"));
         }
 
         Ok(tokens[0].clone())
     } 
 
     /// Generates a `(String, String, String)` containing the same values as the given `&Vec<Token>`
-    /// 
-    /// # Panics
-    /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Op, Token::Num]`
-    fn extract_token_values(tokens: &Vec<Token>) -> Result<(f32, Oper, f32), CalcError> {
-        if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
+    fn extract_token_values(tokens: &Vec<Token>) -> Result<(f32, Oper, f32), CalcErr> {
+        if tokens.is_empty() { return Err(CalcErr::from("Length cannot be `0`")); }
 
         let token0;
         let token1;
@@ -284,33 +290,33 @@ pub mod calc {
 
         // Verify length
         if tokens.len() != 3 {
-            return Err(CalcError::Length(String::from("Length must be 3")));
+            return Err(CalcErr::from("Length must be 3"));
         }
 
         // Verify tokens and extract values
         if let Token::Num(t) = &tokens[0] {
             token0 = t;
         } else {
-            return Err(CalcError::Parse(String::from("First token must be a `Token::Num`")));
+            return Err(CalcErr::from("First token must be a `Token::Num`"));
         }
         if let Token::Op(t) = &tokens[1] {
             token1 = t;
         } else {
-            return Err(CalcError::Parse(String::from("Middle token must be a `Token::Op`")));
+            return Err(CalcErr::from("Middle token must be a `Token::Op`"));
         }
         if let Token::Num(t) = &tokens[2] {
             token2 = t;
         } else {
-            return Err(CalcError::Parse(String::from("Last token must be a `Token::Num`")));
+            return Err(CalcErr::from("Last token must be a `Token::Num`"));
         }
 
         Ok((*token0, token1.clone(), *token2))
     }
 
-    pub fn convert_implicit_mul(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcError> {
+    pub fn convert_implicit_mul(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         // Return error if `tokens` contains parentheses
         if tokens.contains(&Token::Op(Oper::LPar)) || tokens.contains(&Token::Op(Oper::RPar)) {
-            return Err(CalcError::Parse(String::from("cannot call `convert_implicit_mul` on a `Vec<Token>` that contains parentheses")));
+            return Err(CalcErr::from("cannot call `convert_implicit_mul` on a `Vec<Token>` that contains parentheses"));
         }
 
         // Insert `Token::Op(Oper::Mul)` between any `Token::Num` or `Token::Id`
@@ -387,8 +393,8 @@ pub mod calc {
         Tan(Vec<Token>),
     }
     impl Func {
-        pub fn calc(&self) -> Result<Token, CalcError> {
-            let error = Err(CalcError::Parse(String::from("`calculate` did not return a `Token::Num`")));
+        pub fn calc(&self) -> Result<Token, CalcErr> {
+            let error = Err(CalcErr::from("`calculate` did not return a `Token::Num`"));
             match self {
                 Func::Sqrt(v) => if let Token::Num(n) = calculate(v)? {
                     Ok(Token::Num(n.sqrt()))
@@ -445,21 +451,23 @@ pub mod calc {
 
     /// Represents possible errors when calculating
     #[derive(Debug)]
-    pub enum CalcError {
-        Length(String),
-        Parse(String),
+    pub struct CalcErr(String);
+    impl From<ParseFloatError> for CalcErr {
+        fn from(value: ParseFloatError) -> Self {
+            CalcErr(value.to_string())
+        }
     }
-    impl From<std::num::ParseFloatError> for CalcError {
-        fn from(value: <f32 as std::str::FromStr>::Err) -> Self {
-            CalcError::Parse(value.to_string())
+    impl From<&str> for CalcErr {
+        fn from(value: &str) -> Self {
+            CalcErr(value.to_string())
         }
     }
 
     #[cfg(test)]
     mod tests {
         use super::*;
-        use super::Token::{Num, Op, Id};
-        use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub};
+        use super::Token::{Num, Op, Id, Fn};
+        use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub, FnStart};
         use super::Func::{Sqrt, Cbrt, Log, Floor, Ceil, Abs, Round, Sin, Cos, Tan};
 
         #[test]
@@ -562,6 +570,20 @@ pub mod calc {
             assert_eq!(vec![Num(4.0), Op(Mul), Num(4.0)], convert_implicit_mul(tokens1).unwrap());
             assert_eq!(vec![Id(String::from("a")), Op(Mul), Id(String::from("b"))], convert_implicit_mul(tokens2).unwrap());
             assert_eq!(vec![Num(4.0), Op(Mul), Id(String::from("a"))], convert_implicit_mul(tokens3).unwrap());
+        }
+
+        #[test]
+        fn test_parse_functions() {
+            let tokens1 = vec![Op(FnStart), Id(String::from("sqrt")), Op(LPar), Num(2.0), Op(RPar)];
+            let tokens2 = vec![Op(FnStart), Id(String::from("Sqrt")), Op(LPar), Num(2.0), Op(RPar)]; // Capitalization
+            let tokens3 = vec![Op(FnStart), Id(String::from("log")), Op(LPar), Num(2.0), Op(RPar)];  
+            let tokens4 = vec![Op(FnStart), Id(String::from("sin")), Op(LPar), Num(2.0), Op(RPar)];
+
+            assert_eq!(vec![Fn(Func::Sqrt(vec![Num(2.0)]))], parse_functions(tokens1).unwrap());
+            assert_eq!(vec![Fn(Func::Sqrt(vec![Num(2.0)]))], parse_functions(tokens2).unwrap());
+            assert_eq!(vec![Fn(Func::Log(vec![Num(2.0)]))], parse_functions(tokens3).unwrap());
+            assert_eq!(vec![Fn(Func::Sin(vec![Num(2.0)]))], parse_functions(tokens4).unwrap());
+
         }
 
         #[test]
