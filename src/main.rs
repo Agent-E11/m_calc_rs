@@ -11,7 +11,7 @@ fn main() {
     let tokens = tokenize(&input_expr).unwrap();
     println!("Tokens: {tokens:?}");
 
-    let c_res = calculate(&tokens);
+    // let c_res = calculate(&tokens);
 
-    println!("Converted res: {c_res:?}");
+    // println!("Converted res: {c_res:?}");
 }

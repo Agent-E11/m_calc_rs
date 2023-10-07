@@ -1,11 +1,12 @@
+// TODO: Change `CalcError` from an enum to a struct. Rename to `CalcErr`
+
 // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
 // TODO: Add complex calculation 2 (Order of operations)
-// TODO: Add support for implicit multiplication
-//      (function that takes a `Vec<Token>` and converts all of its implicit multiplication to explicit)
-//      (this happens after the "parentheses" pass, and just inserts a `Token::Op(Oper::Mul)` between any two `Token::Num()` or `Token::Id`)
 
-// TODO: Add support for some functions (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions, maybe multiple variable functions?) (Add this inside of the Parentheses pass?)
+// TODO: Add support for some functions
+//      (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions, maybe multiple variable functions?)
+//      (before parentheses pass(?), convert any section in the format `Op(FnStart), Id, Op::(LPar), "Tokens", Op::(RPar)` to `Fn("Tokens")`)
 // TODO: Add support for identifiers / variables (also `;`?)
 
 pub mod calc {
@@ -92,8 +93,9 @@ pub mod calc {
             Oper::Mod => Ok(Token::Num(left%right)),
             Oper::Add => Ok(Token::Num(left+right)),
             Oper::Sub => Ok(Token::Num(left-right)),
-            Oper::LPar => Err(CalcError::Parse(String::from("`(` is an invalid operator"))),
-            Oper::RPar => Err(CalcError::Parse(String::from("`)` is an invalid operator"))),
+            Oper::LPar => Err(CalcError::Parse(String::from("`(` is an invalid calculation operator"))),
+            Oper::RPar => Err(CalcError::Parse(String::from("`)` is an invalid calculation operator"))),
+            Oper::FnStart => Err(CalcError::Parse(String::from("`\\` is an invalid calculation operator"))),
         };
 
         println!("Result of `simple_calc`: {res:?}");
@@ -145,7 +147,7 @@ pub mod calc {
     }
 
     /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
-    pub fn calculate_operator(tokens: Vec<Token>, operator: Oper) -> Result<Vec<Token>, CalcError> {
+    pub fn calculate_operator(tokens: Vec<Token>, operators: &[Oper]) -> Result<Vec<Token>, CalcError> {
         if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
 
         let mut tokens = tokens;
@@ -156,7 +158,7 @@ pub mod calc {
             }
             if let Token::Op(o) = &tokens[i] {
                 println!("Operator `{o}` at `{i}`");
-                if o == &operator {
+                if operators.contains(o) {
                     println!("Operator matches");
                     println!("Calculating: {:?}", &tokens[i-1..i+2]);
                     let res = simple_calc(&Vec::from(&tokens[i-1..i+2]))?;
@@ -253,20 +255,13 @@ pub mod calc {
         // Second pass: operators
         println!("Starting \"Operator\" pass");
 
-        // TODO: Have `calculate_tokens` accept a list of `Oper` (for the "mul, div, mod" and "add, sub" passes)
         println!("Tokens before pass: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Exp)?;
+        tokens = calculate_operator(tokens, &[Oper::Exp])?;
         println!("After `^`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Mul)?;
-        println!("After `*`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Div)?;
-        println!("After `/`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Mod)?;
-        println!("After `%`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Add)?;
-        println!("After `+`: {tokens:?}");
-        tokens = calculate_operator(tokens, Oper::Sub)?;
-        println!("After `-`: {tokens:?}");
+        tokens = calculate_operator(tokens, &[Oper::Mul, Oper::Div, Oper::Mod])?;
+        println!("After `*, /, %`: {tokens:?}");
+        tokens = calculate_operator(tokens, &[Oper::Add, Oper::Sub])?;
+        println!("After `+, -`: {tokens:?}");
 
         // If we end up with multiple tokens at the end, return an error
         if tokens.len() > 1 || !matches!(tokens[0], Token::Num(_)) {
@@ -282,7 +277,6 @@ pub mod calc {
     /// Panics if the `tokens` vector is not in the format `[Token::Num, Token::Op, Token::Num]`
     fn extract_token_values(tokens: &Vec<Token>) -> Result<(f32, Oper, f32), CalcError> {
         if tokens.is_empty() { return Err(CalcError::Length(String::from("Length cannot be `0`"))); }
-        // FIXME: Add better error handling
 
         let token0;
         let token1;
@@ -331,11 +325,11 @@ pub mod calc {
                             i = 0;
                             continue;
                         },
-                        Token::Op(_) => (),
+                        Token::Op(_) | Token::Fn(_)=> (),
                     },
                     None => break,
                 },
-                Token::Op(_) => (),
+                Token::Op(_) | Token::Fn(_) => (),
             }
 
             i += 1;
@@ -355,6 +349,7 @@ pub mod calc {
         Mod, // Modulus
         Add, // Add
         Sub, // Subtract
+        FnStart, // Signifies that the next token (an Id), will be the name of a function
     }
     impl From<&str> for Oper {
         fn from(value: &str) -> Self {
@@ -367,6 +362,7 @@ pub mod calc {
                 "%" => Oper::Mod,
                 "+" => Oper::Add,
                 "-" => Oper::Sub,
+                "\\" => Oper::FnStart,
                 _ => panic!(),
             }
         }
@@ -377,19 +373,72 @@ pub mod calc {
         }
     }
 
+    #[derive(Debug, PartialEq, Clone)]
+    pub enum Func {
+        Sqrt(Vec<Token>),
+        Cbrt(Vec<Token>),
+        Log(Vec<Token>),
+        Floor(Vec<Token>),
+        Ceil(Vec<Token>),
+        Abs(Vec<Token>),
+        Round(Vec<Token>),
+        Sin(Vec<Token>),
+        Cos(Vec<Token>),
+        Tan(Vec<Token>),
+    }
+    impl Func {
+        pub fn calc(&self) -> Result<Token, CalcError> {
+            let error = Err(CalcError::Parse(String::from("`calculate` did not return a `Token::Num`")));
+            match self {
+                Func::Sqrt(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.sqrt()))
+                } else { error },
+                Func::Cbrt(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.cbrt()))
+                } else { error },
+                Func::Log(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.log10()))
+                } else { error },
+                Func::Floor(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.floor()))
+                } else { error },
+                Func::Ceil(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.ceil()))
+                } else { error },
+                Func::Abs(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.abs()))
+                } else { error },
+                Func::Round(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.round()))
+                } else { error },
+                Func::Sin(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.sin()))
+                } else { error },
+                Func::Cos(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.cos()))
+                } else { error },
+                Func::Tan(v) => if let Token::Num(n) = calculate(v)? {
+                    Ok(Token::Num(n.tan()))
+                } else { error },
+            }
+        }
+    }
+
     /// Represents a token in a mathematical expression
     #[derive(Debug, PartialEq, Clone)]
     pub enum Token {
         Num(f32),
         Op(Oper),
         Id(String),
+        Fn(Func),
     }
     impl std::fmt::Display for Token {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Token::Num(n) => write!(f, "Num(\"{n}\")"),
-                Token::Op(n) => write!(f, "Op(\"{n}\")"),
-                Token::Id(n) => write!(f, "Id(\"{n}\")"),
+                Token::Num(v) => write!(f, "Num({v})"),
+                Token::Op(v) => write!(f, "Op({v})"),
+                Token::Id(v) => write!(f, "Id(\"{v}\")"),
+                Token::Fn(v) => write!(f, "Fn({v:?})"),
             }
         }
     }
@@ -411,6 +460,7 @@ pub mod calc {
         use super::*;
         use super::Token::{Num, Op, Id};
         use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub};
+        use super::Func::{Sqrt, Cbrt, Log, Floor, Ceil, Abs, Round, Sin, Cos, Tan};
 
         #[test]
         fn test_tokenize() {
@@ -478,12 +528,12 @@ pub mod calc {
             ];
 
             assert_eq!(
-                calculate_operator(tokens1.clone(), Exp).unwrap(),
+                calculate_operator(tokens1.clone(), &[Exp]).unwrap(),
                 vec![Num(4.0), Op(Add), Num(5.0)]
             );
 
             assert_eq!(
-                calculate_operator(tokens1, Add).unwrap(),
+                calculate_operator(tokens1, &[Add]).unwrap(),
                 vec![Num(2.0), Op(Exp), Num(7.0)]
             );
         }
@@ -493,11 +543,58 @@ pub mod calc {
             let tokens1 = vec![Num(4.0), Op(Add), Num(2.0), Op(Mul), Num(2.0)]; // Order of operations
             let tokens2 = vec![Num(2.0), Op(Sub), Num(3.0), Op(Add), Num(4.0), Op(Mod), Num(5.0), Op(Div), Num(6.0), Op(Mul), Num(7.0), Op(Exp), Num(8.0)];
             let tokens3 = vec![Op(LPar), Num(4.0), Op(Add), Num(2.0), Op(RPar), Op(Mul), Num(2.0)]; // Parentheses
-            // let tokens4 = vec!;
-            // let tokens5 = vec!;
+            let tokens4 = vec![Op(LPar), Num(2.0), Op(RPar)]; // Unnecessary parentheses
+            let tokens5 = vec![Num(2.0), Op(LPar), Num(3.0), Op(RPar)]; // Implicit multiplication
 
             assert_eq!(Token::Num(8.0), calculate(&tokens1).unwrap());
-            assert_eq!(Token::Num(3843199.6666), calculate(&tokens2).unwrap()); // Is this correct?
+            assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2).unwrap());
+            assert_eq!(Token::Num(12.0), calculate(&tokens3).unwrap());
+            assert_eq!(Token::Num(2.0), calculate(&tokens4).unwrap());
+            assert_eq!(Token::Num(6.0), calculate(&tokens5).unwrap());
+        }
+
+        #[test]
+        fn test_convert_implicit_mul() {
+            let tokens1 = vec![Num(4.0), Num(4.0)];
+            let tokens2 = vec![Id(String::from("a")), Id(String::from("b"))];
+            let tokens3 = vec![Num(4.0), Id(String::from("a"))];
+
+            assert_eq!(vec![Num(4.0), Op(Mul), Num(4.0)], convert_implicit_mul(tokens1).unwrap());
+            assert_eq!(vec![Id(String::from("a")), Op(Mul), Id(String::from("b"))], convert_implicit_mul(tokens2).unwrap());
+            assert_eq!(vec![Num(4.0), Op(Mul), Id(String::from("a"))], convert_implicit_mul(tokens3).unwrap());
+        }
+
+        #[test]
+        fn test_func_calc() {
+            let f01 = Sqrt(vec![Num(4.0), Op(Mul), Num(8.0)]);
+            assert_eq!(Token::Num(32.0_f32.sqrt()), f01.calc().unwrap());
+
+            let f02 = Cbrt(vec![Num(27.0)]);
+            assert_eq!(Token::Num(3.0), f02.calc().unwrap());
+
+            let f03 = Log(vec![Num(1000.0)]);
+            assert_eq!(Token::Num(3.0), f03.calc().unwrap());
+
+            let f04 = Floor(vec![Num(3.15)]);
+            assert_eq!(Token::Num(3.0), f04.calc().unwrap());
+
+            let f05 = Ceil(vec![Num(2.15)]);
+            assert_eq!(Token::Num(3.0), f05.calc().unwrap());
+
+            let f06 = Abs(vec![Num(-10.0)]);
+            assert_eq!(Token::Num(10.0), f06.calc().unwrap());
+
+            let f07 = Round(vec![Num(3.1)]);
+            assert_eq!(Token::Num(3.0), f07.calc().unwrap());
+
+            let f08 = Sin(vec![Num(2.0)]);
+            assert_eq!(Token::Num(2.0_f32.sin()), f08.calc().unwrap());
+
+            let f09 = Cos(vec![Num(2.0)]);
+            assert_eq!(Token::Num(2.0_f32.cos()), f09.calc().unwrap());
+
+            let f10 = Tan(vec![Num(2.0)]);
+            assert_eq!(Token::Num(2.0_f32.tan()), f10.calc().unwrap());
         }
     }
 }
