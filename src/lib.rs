@@ -10,7 +10,6 @@
 pub mod calc {
     use std::num::ParseFloatError;
 
-
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
     pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcErr> {
 
@@ -144,18 +143,87 @@ pub mod calc {
     }
 
     /// Takes a `Vec<Token>` and replaces all occurrences of `Op(FnStart), Id(), Op(LPar), ... , Op(RPar)` with `Fn(Func(...))`
-    pub fn parse_functions(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
+    pub fn parse_functions(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         let mut i = 0;
+        println!("\nstarting function parse");
         loop {
-            if tokens[0] == Token::Op(Oper::FnStart) {
-                let id_str = if let Token::Id(id) = &tokens[i+1] {
-                    id
-                } else {
-                    return Err(CalcErr(format!("`{}` is an invalid function id", tokens[i])));
-                };                
+
+            // Get current token, break if end of `Vec`
+            match tokens.get(i) {
+                None => break,
+                Some(token) => {
+                    println!("Element `{token}` at index `{i}` of vec `{tokens:?}`");
+                    // Check to see if the current token is a function start operator, if it isn't, do nothing
+                    if token == &Token::Op(Oper::FnStart) {
+                        println!("starting function parse at `{i}`");
+                        // `id_str` is the string contained in the next token. If the next token is not a `Token::Id` return an error
+                        let id_str = match tokens.get(i+1).cloned() {
+                            None => return { println!("error: no token after `FnStart`"); Err(CalcErr::from("unexpected end of `Vec`")) },
+                            Some(t) => if let Token::Id(id) = t {
+                                println!("`id_str` is `{id}`");
+                                id
+                            } else {
+                                return Err(CalcErr(format!("`{}` is an invalid function id", tokens.get(i+1).unwrap())));
+                            }
+                        };
+                        // `func_tokens` is the `Vec<Token>` to be passed into the `Func`
+                        let func_tokens: Vec<Token> = if let Some(t) = tokens.get(i+2) {
+                            if t == &Token::Op(Oper::LPar) {
+                                let start = i + 3;
+                                let mut end = i + 4;
+                                let mut open_parens = 1;
+                                // TODO: Better comments
+                                // Loop through elements inside the parentheses
+                                loop {
+                                    match tokens.get(end) {
+                                        None => return Err(CalcErr::from("unexpected end of `Vec`")),
+                                        Some(t) => if let Token::Op(o) = t {
+                                            // Increase/decrease `open_parens` if the `Op` is a parentheses
+                                            match o {
+                                                Oper::LPar => open_parens += 1,
+                                                Oper::RPar => open_parens -= 1,
+                                                _ => (),
+                                            }
+                                        }
+                                    }
+                                    if open_parens <= 0 {
+                                        // If all the parentheses are closed,
+                                        // break and assign the contained `Vec` to `func_tokens` (including parentheses)
+                                        break tokens.drain(start-1..end+1).collect();
+                                    }
+                                    end += 1;
+                                }
+                            } else {
+                                // If the next token is not an open parentheses, return an error
+                                return Err(CalcErr::from("missing open parentheses after function id"));
+                            }
+                        } else {
+                            println!("no token after `Id`");
+                            return Err(CalcErr::from("unexpected end of `Vec`"));
+                        };
+
+                        println!("`func_tokens` is `{func_tokens:?}`");
+                        // Get the index of the first `Op(FnStart)` (this is the one currently being parsed)
+                        let func_index = tokens.iter().position(|t| t == &Token::Op(Oper::FnStart)).unwrap();
+                        // Delete the `Op(FnStart)` and `Id()`
+                        let _ = tokens.drain(func_index..func_index+2);
+                        // Insert `Fn`
+                        tokens.insert(
+                            func_index,
+                            Token::Fn(
+                                Func::try_from( // Generate a `Func` from the `id_str` and `func_tokens` (without the parentheses)
+                                    (id_str.as_str(), func_tokens[1..func_tokens.len()-1].to_vec())
+                                )?
+                            )
+                        );
+                        i = 0;
+                        continue;
+                    }
+                }
             }
             i += 1;
         }
+        Ok(tokens)
     }
 
     /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
@@ -196,6 +264,16 @@ pub mod calc {
 
         // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
         println!("Started `calculate`");
+
+        // TODO: first pass?
+        // Calculate each function
+        tokens = parse_functions(tokens)?.into_iter().map(|t| {
+            if let Token::Fn(f) = t {
+                f.calc()
+            } else {
+                Ok(t)
+            }
+        }).collect::<Result<Vec<Token>, CalcErr>>()?;
 
         // First pass: Calculate and substitute parentheses
         println!("Starting \"Parentheses\" pass");
@@ -324,18 +402,18 @@ pub mod calc {
         loop {
 
             match tokens[i] {
-                Token::Num(_) | Token::Id(_) => match tokens.get(i+1) {
+                Token::Num(_) | Token::Id(_) | Token::Fn(_) => match tokens.get(i+1) {
                     Some(t) => match t {
-                        Token::Num(_) | Token::Id(_) => {
+                        Token::Num(_) | Token::Id(_) | Token::Fn(_) => {
                             tokens.insert(i+1, Token::Op(Oper::Mul));
                             i = 0;
                             continue;
                         },
-                        Token::Op(_) | Token::Fn(_)=> (),
+                        Token::Op(_) => (),
                     },
                     None => break,
                 },
-                Token::Op(_) | Token::Fn(_) => (),
+                Token::Op(_) => (),
             }
 
             i += 1;
@@ -426,6 +504,25 @@ pub mod calc {
                 Func::Tan(v) => if let Token::Num(n) = calculate(v)? {
                     Ok(Token::Num(n.tan()))
                 } else { error },
+            }
+        }
+    }
+    impl TryFrom<(&str, Vec<Token>)> for Func {
+        type Error = CalcErr;
+
+        fn try_from(value: (&str, Vec<Token>)) -> Result<Self, Self::Error> {
+            match value.0.to_lowercase().as_str() {
+                "sqrt" => Ok(Func::Sqrt(value.1)),
+                "cbrt" => Ok(Func::Cbrt(value.1)),
+                "log" => Ok(Func::Log(value.1)),
+                "floor" => Ok(Func::Floor(value.1)),
+                "ceil" => Ok(Func::Ceil(value.1)),
+                "abs" => Ok(Func::Abs(value.1)),
+                "round" => Ok(Func::Round(value.1)),
+                "sin" => Ok(Func::Sin(value.1)),
+                "cos" => Ok(Func::Cos(value.1)),
+                "tan" => Ok(Func::Tan(value.1)),
+                _ => Err(CalcErr(format!("invalid function name: `{}`", value.0))),
             }
         }
     }
@@ -553,35 +650,43 @@ pub mod calc {
             let tokens3 = vec![Op(LPar), Num(4.0), Op(Add), Num(2.0), Op(RPar), Op(Mul), Num(2.0)]; // Parentheses
             let tokens4 = vec![Op(LPar), Num(2.0), Op(RPar)]; // Unnecessary parentheses
             let tokens5 = vec![Num(2.0), Op(LPar), Num(3.0), Op(RPar)]; // Implicit multiplication
+            let tokens6 = vec![Op(FnStart), Id(String::from("sqrt")), Op(LPar), Num(4.0), Op(RPar), Op(FnStart), Id(String::from("log")), Op(LPar), Num(100.0), Op(RPar)]; // Functions
+            // let tokens7 = vec![]; // Implicit multiplication
+            
 
             assert_eq!(Token::Num(8.0), calculate(&tokens1).unwrap());
             assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2).unwrap());
             assert_eq!(Token::Num(12.0), calculate(&tokens3).unwrap());
             assert_eq!(Token::Num(2.0), calculate(&tokens4).unwrap());
             assert_eq!(Token::Num(6.0), calculate(&tokens5).unwrap());
+            assert_eq!(Token::Num(4.0), calculate(&tokens6).unwrap());
         }
 
         #[test]
         fn test_convert_implicit_mul() {
-            let tokens1 = vec![Num(4.0), Num(4.0)];
-            let tokens2 = vec![Id(String::from("a")), Id(String::from("b"))];
-            let tokens3 = vec![Num(4.0), Id(String::from("a"))];
+            let tokens1 = vec![Num(4.0), Num(4.0)]; // `Num`
+            let tokens2 = vec![Id(String::from("a")), Id(String::from("b"))]; // `Id`
+            let tokens3 = vec![Num(4.0), Id(String::from("a"))]; // `Num` `Id`
+            let tokens4 = vec![Fn(Sqrt(vec![Num(2.0)])), Fn(Sqrt(vec![Num(2.0)]))]; // `Fn`
+            let tokens5 = vec![Fn(Sqrt(vec![Num(2.0)])), Num(2.0)]; // `Fn` `Num`
 
             assert_eq!(vec![Num(4.0), Op(Mul), Num(4.0)], convert_implicit_mul(tokens1).unwrap());
             assert_eq!(vec![Id(String::from("a")), Op(Mul), Id(String::from("b"))], convert_implicit_mul(tokens2).unwrap());
             assert_eq!(vec![Num(4.0), Op(Mul), Id(String::from("a"))], convert_implicit_mul(tokens3).unwrap());
+            assert_eq!(vec![Fn(Sqrt(vec![Num(2.0)])), Op(Mul), Fn(Sqrt(vec![Num(2.0)]))], convert_implicit_mul(tokens4).unwrap());
+            assert_eq!(vec![Fn(Sqrt(vec![Num(2.0)])), Op(Mul), Num(2.0)], convert_implicit_mul(tokens5).unwrap());
         }
 
         #[test]
         fn test_parse_functions() {
             let tokens1 = vec![Op(FnStart), Id(String::from("sqrt")), Op(LPar), Num(2.0), Op(RPar)];
             let tokens2 = vec![Op(FnStart), Id(String::from("Sqrt")), Op(LPar), Num(2.0), Op(RPar)]; // Capitalization
-            let tokens3 = vec![Op(FnStart), Id(String::from("log")), Op(LPar), Num(2.0), Op(RPar)];  
+            let tokens3 = vec![Op(FnStart), Id(String::from("log")), Op(LPar), Num(2.0), Op(Mul), Num(2.0), Op(RPar)]; // Expression passed to function
             let tokens4 = vec![Op(FnStart), Id(String::from("sin")), Op(LPar), Num(2.0), Op(RPar)];
 
             assert_eq!(vec![Fn(Func::Sqrt(vec![Num(2.0)]))], parse_functions(tokens1).unwrap());
             assert_eq!(vec![Fn(Func::Sqrt(vec![Num(2.0)]))], parse_functions(tokens2).unwrap());
-            assert_eq!(vec![Fn(Func::Log(vec![Num(2.0)]))], parse_functions(tokens3).unwrap());
+            assert_eq!(vec![Fn(Func::Log(vec![Num(2.0), Op(Mul), Num(2.0)]))], parse_functions(tokens3).unwrap());
             assert_eq!(vec![Fn(Func::Sin(vec![Num(2.0)]))], parse_functions(tokens4).unwrap());
 
         }
