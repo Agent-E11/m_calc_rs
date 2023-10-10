@@ -24,5 +24,5 @@ fn main() {
     let t1 = Token::Id(String::from(""));
 
 
-    println!("Calc: {:?}", calculate(&tokens))
+    // println!("Calc: {:?}", calculate(&tokens))
 }

@@ -1,5 +1,6 @@
 // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
+// Standardize error capitalization (all lowercase, no trailing punctuation)
 
 // TODO: Add support for identifiers / variables (also `;` and a "context" to store variables?)
 
@@ -417,9 +418,31 @@ pub mod calc {
     }
 
     /// Does some simple syntax checks on a `Vec<Token>` and returns an error if there are any mistakes
+    /// 
     pub fn simple_syntax_check(tokens: &[Token]) -> Result<(), CalcErr> {
+        if tokens.is_empty() { return Err(CalcErr::from("Length cannot be `0`")); }
 
-        // Check number of parentheses
+        // Check dangling operators
+        // Beginning
+        if let Token::Op(o) = &tokens[0] {
+            match o {
+                Oper::RPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add => {
+                    return Err(CalcErr::from("first token is invalid"));
+                },
+                Oper::FnStart | Oper::LPar | Oper::Sub => (),
+            }
+        }
+        // End
+        if let Token::Op(o) = &tokens.last().unwrap() {
+            match o {
+                Oper::LPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Sub => {
+                    return Err(CalcErr::from("last token is invalid"));
+                },
+                Oper::FnStart | Oper::RPar => (),
+            }
+        }
+
+        // Check number of parentheses (and empty parentheses)
         let mut open_parens = 0;
         let mut last_paren = 0;
         for (i, token) in tokens.iter().enumerate() {
@@ -427,6 +450,7 @@ pub mod calc {
                 match o {
                     Oper::LPar => {
                         // Check for empty parens
+                        if tokens[i+1] == Token::Op(Oper::RPar) { return Err(CalcErr(format!("empty parentheses at `{i}`"))); }
                         open_parens += 1;
                         last_paren = i
                     },
@@ -440,6 +464,15 @@ pub mod calc {
         }
         if open_parens != 0 {
             return Err(CalcErr(format!("unclosed parentheses at `{last_paren}`")));
+        }
+        
+        // Check for 2 `Op` in a row
+        for (i, token) in tokens.iter().enumerate() {
+            if let Token::Op(_) = token {
+                if let Token::Op(_) = tokens[i+1] {
+                    return Err(CalcErr(format!("2 `Op` in a row at {i}")));
+                }
+            }
         }
 
         Ok(())
@@ -762,7 +795,7 @@ pub mod calc {
             let tokens = &vec![Num(2.0), Op(RPar), Op(LPar)]; // Correct number of parens, wrong placement
             assert!(simple_syntax_check(tokens).is_err(), "correct number of parens, wrong placement, should err");
 
-            let tokens = &vec![Op(LPar), Op(RPar)]; // Empty parens TODO: Should this be an error or not?
+            let tokens = &vec![Op(LPar), Op(RPar)]; // Empty parens
             assert!(simple_syntax_check(tokens).is_err(), "empty parens, should err");
 
             let tokens = &vec![Num(2.0), Op(Mul), Op(Mul), Num(2.0)]; // 2 `Op` in a row
