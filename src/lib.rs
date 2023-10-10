@@ -1,11 +1,7 @@
 // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
-// TODO: Add complex calculation 2 (Order of operations)
 
-// TODO: Add support for some functions
-//      (sqrt, log, cbrt, floor/ceiling, abs, factorial, round, trig functions, maybe multiple variable functions?)
-//      (before parentheses pass(?), convert any section in the format `Op(FnStart), Id, Op::(LPar), "Tokens", Op::(RPar)` to `Fn("Tokens")`)
-// TODO: Add support for identifiers / variables (also `;`?)
+// TODO: Add support for identifiers / variables (also `;` and a "context" to store variables?)
 
 pub mod calc {
     use std::num::ParseFloatError;
@@ -41,7 +37,7 @@ pub mod calc {
                     }
                     tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?));
                 },
-                a if a.is_alphabetic() => { // TODO: Or if a is '\'? (to start function identifier)
+                a if a.is_alphabetic() => {
                     // If it is a letter, walk through the next characters until it is not a letter, 
                     // then add that slice to `tokens` as a `Token::Id`
                     while indx_char.1.is_alphabetic() {
@@ -172,7 +168,6 @@ pub mod calc {
                                 let start = i + 3;
                                 let mut end = i + 4;
                                 let mut open_parens = 1;
-                                // TODO: Better comments
                                 // Loop through elements inside the parentheses
                                 loop {
                                     match tokens.get(end) {
@@ -258,15 +253,14 @@ pub mod calc {
     }
 
     /// Takes a `&Vec<Token>` and computes the mathematical expression and returns the resulting number wrapped in a `Token::Num()`
-    pub fn calculate(tokens: &Vec<Token>) -> Result<Token, CalcErr> { // TODO: Address Clippy issue (no `drain` method)
+    pub fn calculate(tokens: &Vec<Token>) -> Result<Token, CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("Length cannot be `0`")); }
         let mut tokens = tokens.clone();
 
         // TODO: Validate syntax. Check correct number of parentheses, make sure no 2 operators in a row, etc
         println!("Started `calculate`");
 
-        // TODO: first pass?
-        // Calculate each function
+        // Pass 1: Parse each function, calculate each function
         tokens = parse_functions(tokens)?.into_iter().map(|t| {
             if let Token::Fn(f) = t {
                 f.calc()
@@ -275,7 +269,7 @@ pub mod calc {
             }
         }).collect::<Result<Vec<Token>, CalcErr>>()?;
 
-        // First pass: Calculate and substitute parentheses
+        // Pass 2: Calculate and substitute parentheses
         println!("Starting \"Parentheses\" pass");
         let mut i = 0;
         loop {
@@ -339,7 +333,7 @@ pub mod calc {
 
         tokens = convert_implicit_mul(tokens)?;
 
-        // Second pass: operators
+        // Pass 3: operators
         println!("Starting \"Operator\" pass");
 
         println!("Tokens before pass: {tokens:?}");
@@ -420,6 +414,11 @@ pub mod calc {
         }
 
         Ok(tokens)
+    }
+
+    /// Does some simple syntax checks on a `Vec<Token>` and returns an error if there are any mistakes
+    pub fn simple_syntax_check(tokens: &Vec<Token>) -> Result<(), CalcErr> {
+        Err(CalcErr::from("unimplemented"))
     }
 
     /// Represents a mathematical operator
@@ -722,6 +721,14 @@ pub mod calc {
 
             let f10 = Tan(vec![Num(2.0)]);
             assert_eq!(Token::Num(2.0_f32.tan()), f10.calc().unwrap());
+        }
+    
+        #[test]
+        fn test_simple_syntax_check() {
+            // TODO: Add more test cases
+            let tokens1 = &vec![Token::Num(2.0)];
+
+            assert!(simple_syntax_check(tokens1).is_ok());
         }
     }
 }
