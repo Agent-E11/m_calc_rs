@@ -417,8 +417,32 @@ pub mod calc {
     }
 
     /// Does some simple syntax checks on a `Vec<Token>` and returns an error if there are any mistakes
-    pub fn simple_syntax_check(tokens: &Vec<Token>) -> Result<(), CalcErr> {
-        Err(CalcErr::from("unimplemented"))
+    pub fn simple_syntax_check(tokens: &[Token]) -> Result<(), CalcErr> {
+
+        // Check number of parentheses
+        let mut open_parens = 0;
+        let mut last_paren = 0;
+        for (i, token) in tokens.iter().enumerate() {
+            if let Token::Op(o) = token {
+                match o {
+                    Oper::LPar => {
+                        // Check for empty parens
+                        open_parens += 1;
+                        last_paren = i
+                    },
+                    Oper::RPar => open_parens -= 1,
+                    _ => (),
+                }
+            }
+            if open_parens < 0 {
+                return Err(CalcErr(format!("unexpected closing parentheses at `{i}`")));
+            }
+        }
+        if open_parens != 0 {
+            return Err(CalcErr(format!("unclosed parentheses at `{last_paren}`")));
+        }
+
+        Ok(())
     }
 
     /// Represents a mathematical operator
@@ -726,9 +750,52 @@ pub mod calc {
         #[test]
         fn test_simple_syntax_check() {
             // TODO: Add more test cases
-            let tokens1 = &vec![Token::Num(2.0)];
+            let tokens = &vec![Num(2.0)]; // Base passing case
+            assert!(simple_syntax_check(tokens).is_ok(), "single `Num`, should pass");
 
-            assert!(simple_syntax_check(tokens1).is_ok());
+            let tokens = &vec![Num(2.0), Op(RPar)]; // Unexpected `RPar`
+            assert!(simple_syntax_check(tokens).is_err(), "unexpected `RPar`, should err");
+
+            let tokens = &vec![Num(2.0), Op(LPar)]; // Unclosed `LPar`
+            assert!(simple_syntax_check(tokens).is_err(), "unclosed `LPar`, should err");
+
+            let tokens = &vec![Num(2.0), Op(RPar), Op(LPar)]; // Correct number of parens, wrong placement
+            assert!(simple_syntax_check(tokens).is_err(), "correct number of parens, wrong placement, should err");
+
+            let tokens = &vec![Op(LPar), Op(RPar)]; // Empty parens TODO: Should this be an error or not?
+            assert!(simple_syntax_check(tokens).is_err(), "empty parens, should err");
+
+            let tokens = &vec![Num(2.0), Op(Mul), Op(Mul), Num(2.0)]; // 2 `Op` in a row
+            assert!(simple_syntax_check(tokens).is_err(), "2 `Op` in a row, should err");
+
+            let tokens = &vec![Num(2.0), Op(Mul), Op(LPar), Num(2.0), Op(RPar)]; // Good case of `LPar` 2 `Op` in a row
+            assert!(simple_syntax_check(tokens).is_ok(), "2 `Op` in a row, `Op` `LPar`, should pass");
+
+            let tokens = &vec![Op(LPar), Num(2.0), Op(RPar), Op(Mul), Num(2.0)]; // Good case of `RPar` 2 `Op` in a row
+            assert!(simple_syntax_check(tokens).is_ok(), "2 `Op` in a row,`RPar` `Op`, should pass");
+
+            let tokens = &vec![Op(LPar), Num(2.0), Op(Mul), Op(RPar)]; // Bad case of `RPar` 2 `Op` in a row
+            assert!(simple_syntax_check(tokens).is_err(), "2 `Op` in a row, `Op` `RPar`, should err");
+
+            let tokens = &vec![Op(LPar), Op(Mul), Num(2.0), Op(RPar)]; // Bad case of `LPar` 2 `Op` in a row
+            assert!(simple_syntax_check(tokens).is_err(), "2 `Op` in a row, `LPar` `Op`, should err");
+
+            let tokens = &vec![Op(Mul), Num(2.0)]; // Left dangling `Op`
+            assert!(simple_syntax_check(tokens).is_err(), "left dangling `Op`, should err");
+
+            let tokens = &vec![Num(2.0), Op(Mul)]; // Right dangling 'Op'
+            assert!(simple_syntax_check(tokens).is_err(), "right dangling `Op`, should err");
+
+            let tokens = &vec![Op(LPar), Num(2.0), Op(RPar)]; // Left dangling 'LPar', right dangling `RPar`
+            assert!(simple_syntax_check(tokens).is_ok(), "left dangling `LPar`, right dangling `RPar`, should pass");
+
+            // TODO: are these 2 tests necessary?
+            let tokens = &vec![Num(2.0), Op(LPar)]; // Right dangling 'LPar'
+            assert!(simple_syntax_check(tokens).is_err(), "right dangling `LPar`, should err");
+
+            let tokens = &vec![Op(RPar), Num(2.0)]; // Left dangling 'RPar'
+            assert!(simple_syntax_check(tokens).is_err(), "left dangling `RPar`, should err");
+
         }
     }
 }

@@ -1,6 +1,7 @@
 use std::io;
 
-use string_calc::calc::{tokenize, calculate, convert_div_sub, convert_implicit_mul, parse_functions};
+use string_calc::calc::{tokenize, calculate, simple_syntax_check};
+use string_calc::calc::Token;
 
 fn main() {
 
@@ -11,10 +12,17 @@ fn main() {
     let tokens = tokenize(&input_expr).unwrap();
     println!("Tokens: {tokens:?}");
 
-    // let parsed = parse_functions(tokens);
-    // println!("{parsed:?}");
+    let res = simple_syntax_check(&tokens);
 
-    let c_res = calculate(&tokens).unwrap();
+    if let Err(e) = &res {
+        println!("Error:\n{e:?}");
+    } else {
+        println!("No errors");
+    }
 
-    println!("Converted res: {c_res:?}");
+
+    let t1 = Token::Id(String::from(""));
+
+
+    println!("Calc: {:?}", calculate(&tokens))
 }
