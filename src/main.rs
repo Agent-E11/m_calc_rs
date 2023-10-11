@@ -1,7 +1,6 @@
 use std::io;
 
 use string_calc::calc::{tokenize, calculate, simple_syntax_check};
-use string_calc::calc::Token;
 
 fn main() {
 
@@ -21,8 +20,5 @@ fn main() {
     }
 
 
-    let t1 = Token::Id(String::from(""));
-
-
-    // println!("Calc: {:?}", calculate(&tokens))
+    println!("Calc: {:?}", calculate(&tokens).unwrap())
 }
