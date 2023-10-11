@@ -1,11 +1,12 @@
 // TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
-// Standardize error capitalization (all lowercase, no trailing punctuation)
 
 // TODO: Add support for identifiers / variables (also `;` and a "context" to store variables?)
-// TODO: Add support for mathematical constants, like: pi, tau, e, sqrt 2 (written like `ConstStart, Id(...)`, parsed to `Const`)
+// TODO: Add support for mathematical constants, like: pi, tau, e, sqrt 2, golden ratio (phi), (written like `ConstStart, Id(...)`, parsed to `Const`)
+// TODO: Add support for user defined functions (define using uppercase characters?)
 
 pub mod calc {
     use std::num::ParseFloatError;
+    use std::collections::HashMap;
 
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
     pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcErr> {
@@ -88,6 +89,8 @@ pub mod calc {
             Oper::Sub => Ok(Token::Num(left-right)),
             Oper::LPar => Err(CalcErr::from("`(` is an invalid calculation operator")),
             Oper::RPar => Err(CalcErr::from("`)` is an invalid calculation operator")),
+            Oper::Equ => Err(CalcErr::from("`=` is an invalid calculation operator")),
+            Oper::LnBr => Err(CalcErr::from("`;` is an invalid calculation operator")),
             Oper::FnStart => Err(CalcErr::from("`\\` is an invalid calculation operator")),
         };
 
@@ -254,7 +257,7 @@ pub mod calc {
     }
 
     /// Takes a `&Vec<Token>` and computes the mathematical expression and returns the resulting number wrapped in a `Token::Num()`
-    pub fn calculate(tokens: &Vec<Token>) -> Result<Token, CalcErr> {
+    pub fn calculate(tokens: &Vec<Token>, context: &mut HashMap<String, Vec<Token>>) -> Result<Token, CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
         let mut tokens = tokens.clone();
 
@@ -263,10 +266,13 @@ pub mod calc {
         // Check syntax, return `Err` if any
         simple_syntax_check(&tokens)?;
 
+        // Substitute variables for their values
+        // TODO:
+        
         // Pass 1: Parse each function, calculate each function
         tokens = parse_functions(tokens)?.into_iter().map(|t| {
             if let Token::Fn(f) = t {
-                f.calc()
+                f.calc(context)
             } else {
                 Ok(t)
             }
@@ -317,7 +323,7 @@ pub mod calc {
                 println!("Subsection passed to `calculate`: {subsection:?}");
 
                 // Calculate subsection
-                let res = calculate(subsection)?;
+                let res = calculate(subsection, context)?;
 
                 println!("Range to be deleted: {:?}", i..j+1);
 
@@ -428,7 +434,7 @@ pub mod calc {
         // Beginning
         if let Token::Op(o) = &tokens[0] {
             match o {
-                Oper::RPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add => {
+                Oper::RPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Equ | Oper::LnBr => {
                     return Err(CalcErr::from("first token is invalid"));
                 },
                 Oper::FnStart | Oper::LPar | Oper::Sub => (),
@@ -437,10 +443,10 @@ pub mod calc {
         // End
         if let Token::Op(o) = &tokens.last().unwrap() {
             match o {
-                Oper::LPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Sub => {
+                Oper::LPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Sub | Oper::Equ => {
                     return Err(CalcErr::from("last token is invalid"));
                 },
-                Oper::FnStart | Oper::RPar => (),
+                Oper::FnStart | Oper::RPar | Oper::LnBr => (),
             }
         }
 
@@ -476,7 +482,7 @@ pub mod calc {
                     _ => {
                         if let Token::Op(op2) = &tokens[i+1] {
                             match op2 {
-                                Oper::LPar => continue,
+                                Oper::LPar | Oper::LnBr => continue,
                                 _ => return Err(CalcErr(format!("2 `Op` in a row at {i}"))),
                             }
                         }
@@ -499,20 +505,24 @@ pub mod calc {
         Mod, // Modulus
         Add, // Add
         Sub, // Subtract
+        Equ, // Assign (equal sign)
+        LnBr, // Line break
         FnStart, // Signifies that the next token (an Id), will be the name of a function
     }
     impl From<&str> for Oper {
         fn from(value: &str) -> Self {
             match value {
-                "(" => Oper::LPar,
-                ")" => Oper::RPar,
-                "^" => Oper::Exp,
-                "*" => Oper::Mul,
-                "/" => Oper::Div,
-                "%" => Oper::Mod,
-                "+" => Oper::Add,
-                "-" => Oper::Sub,
-                "\\" => Oper::FnStart,
+                "(" => Self::LPar,
+                ")" => Self::RPar,
+                "^" => Self::Exp,
+                "*" => Self::Mul,
+                "/" => Self::Div,
+                "%" => Self::Mod,
+                "+" => Self::Add,
+                "-" => Self::Sub,
+                "=" => Self::Equ,
+                ";" => Self::LnBr,
+                "\\" => Self::FnStart,
                 _ => panic!(),
             }
         }
@@ -537,37 +547,37 @@ pub mod calc {
         Tan(Vec<Token>),
     }
     impl Func {
-        pub fn calc(&self) -> Result<Token, CalcErr> {
+        pub fn calc(&self, context: &mut HashMap<String, Vec<Token>>) -> Result<Token, CalcErr> {
             let error = Err(CalcErr::from("`calculate` did not return a `Token::Num`"));
             match self {
-                Func::Sqrt(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Sqrt(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.sqrt()))
                 } else { error },
-                Func::Cbrt(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Cbrt(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.cbrt()))
                 } else { error },
-                Func::Log(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Log(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.log10()))
                 } else { error },
-                Func::Floor(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Floor(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.floor()))
                 } else { error },
-                Func::Ceil(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Ceil(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.ceil()))
                 } else { error },
-                Func::Abs(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Abs(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.abs()))
                 } else { error },
-                Func::Round(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Round(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.round()))
                 } else { error },
-                Func::Sin(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Sin(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.sin()))
                 } else { error },
-                Func::Cos(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Cos(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.cos()))
                 } else { error },
-                Func::Tan(v) => if let Token::Num(n) = calculate(v)? {
+                Func::Tan(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.tan()))
                 } else { error },
             }
@@ -630,7 +640,7 @@ pub mod calc {
     mod tests {
         use super::*;
         use super::Token::{Num, Op, Id, Fn};
-        use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub, FnStart};
+        use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub, Equ, LnBr, FnStart};
         use super::Func::{Sqrt, Cbrt, Log, Floor, Ceil, Abs, Round, Sin, Cos, Tan};
 
         #[test]
@@ -711,6 +721,8 @@ pub mod calc {
 
         #[test]
         fn test_calculate() {
+            let mut context: HashMap<String, Vec<Token>> = HashMap::new();
+
             let tokens1 = vec![Num(4.0), Op(Add), Num(2.0), Op(Mul), Num(2.0)]; // Order of operations
             let tokens2 = vec![Num(2.0), Op(Sub), Num(3.0), Op(Add), Num(4.0), Op(Mod), Num(5.0), Op(Div), Num(6.0), Op(Mul), Num(7.0), Op(Exp), Num(8.0)];
             let tokens3 = vec![Op(LPar), Num(4.0), Op(Add), Num(2.0), Op(RPar), Op(Mul), Num(2.0)]; // Parentheses
@@ -720,12 +732,17 @@ pub mod calc {
             // let tokens7 = vec![]; // Implicit multiplication
             
 
-            assert_eq!(Token::Num(8.0), calculate(&tokens1).unwrap());
-            assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2).unwrap());
-            assert_eq!(Token::Num(12.0), calculate(&tokens3).unwrap());
-            assert_eq!(Token::Num(2.0), calculate(&tokens4).unwrap());
-            assert_eq!(Token::Num(6.0), calculate(&tokens5).unwrap());
-            assert_eq!(Token::Num(4.0), calculate(&tokens6).unwrap());
+            assert_eq!(Token::Num(8.0), calculate(&tokens1, &mut context).unwrap());
+            assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2, &mut context).unwrap());
+            assert_eq!(Token::Num(12.0), calculate(&tokens3, &mut context).unwrap());
+            assert_eq!(Token::Num(2.0), calculate(&tokens4, &mut context).unwrap());
+            assert_eq!(Token::Num(6.0), calculate(&tokens5, &mut context).unwrap());
+            assert_eq!(Token::Num(4.0), calculate(&tokens6, &mut context).unwrap());
+        }
+
+        #[test]
+        fn test_calculate_assignment() {
+            let context: HashMap<String, Vec<Token>> = HashMap::new();
         }
 
         #[test]
@@ -759,35 +776,38 @@ pub mod calc {
 
         #[test]
         fn test_func_calc() {
+            let mut context: HashMap<String, Vec<Token>> = HashMap::new();
+            
+
             let f01 = Sqrt(vec![Num(4.0), Op(Mul), Num(8.0)]);
-            assert_eq!(Token::Num(32.0_f32.sqrt()), f01.calc().unwrap());
+            assert_eq!(Token::Num(32.0_f32.sqrt()), f01.calc(&mut context).unwrap());
 
             let f02 = Cbrt(vec![Num(27.0)]);
-            assert_eq!(Token::Num(3.0), f02.calc().unwrap());
+            assert_eq!(Token::Num(3.0), f02.calc(&mut context).unwrap());
 
             let f03 = Log(vec![Num(1000.0)]);
-            assert_eq!(Token::Num(3.0), f03.calc().unwrap());
+            assert_eq!(Token::Num(3.0), f03.calc(&mut context).unwrap());
 
             let f04 = Floor(vec![Num(3.15)]);
-            assert_eq!(Token::Num(3.0), f04.calc().unwrap());
+            assert_eq!(Token::Num(3.0), f04.calc(&mut context).unwrap());
 
             let f05 = Ceil(vec![Num(2.15)]);
-            assert_eq!(Token::Num(3.0), f05.calc().unwrap());
+            assert_eq!(Token::Num(3.0), f05.calc(&mut context).unwrap());
 
             let f06 = Abs(vec![Num(-10.0)]);
-            assert_eq!(Token::Num(10.0), f06.calc().unwrap());
+            assert_eq!(Token::Num(10.0), f06.calc(&mut context).unwrap());
 
             let f07 = Round(vec![Num(3.1)]);
-            assert_eq!(Token::Num(3.0), f07.calc().unwrap());
+            assert_eq!(Token::Num(3.0), f07.calc(&mut context).unwrap());
 
             let f08 = Sin(vec![Num(2.0)]);
-            assert_eq!(Token::Num(2.0_f32.sin()), f08.calc().unwrap());
+            assert_eq!(Token::Num(2.0_f32.sin()), f08.calc(&mut context).unwrap());
 
             let f09 = Cos(vec![Num(2.0)]);
-            assert_eq!(Token::Num(2.0_f32.cos()), f09.calc().unwrap());
+            assert_eq!(Token::Num(2.0_f32.cos()), f09.calc(&mut context).unwrap());
 
             let f10 = Tan(vec![Num(2.0)]);
-            assert_eq!(Token::Num(2.0_f32.tan()), f10.calc().unwrap());
+            assert_eq!(Token::Num(2.0_f32.tan()), f10.calc(&mut context).unwrap());
         }
     
         #[test]
@@ -827,6 +847,9 @@ pub mod calc {
 
             let tokens = &vec![Num(2.0), Op(Mul)]; // Right dangling 'Op'
             assert!(simple_syntax_check(tokens).is_err(), "right dangling `Op`, should err");
+
+            let tokens = &vec![Num(2.0), Op(LnBr)]; // Right dangling 'LnBr'
+            assert!(simple_syntax_check(tokens).is_ok(), "right dangling `LnBr`, should pass");
 
             let tokens = &vec![Op(LPar), Num(2.0), Op(RPar)]; // Left dangling 'LPar', right dangling `RPar`
             assert!(simple_syntax_check(tokens).is_ok(), "left dangling `LPar`, right dangling `RPar`, should pass");

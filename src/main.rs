@@ -1,4 +1,5 @@
 use std::io;
+use std::collections::HashMap;
 
 use string_calc::calc::{tokenize, calculate, simple_syntax_check};
 
@@ -8,6 +9,7 @@ fn main() {
 
     io::stdin().read_line(&mut input_expr).expect("");
 
+    let mut context = HashMap::new();
     let tokens = tokenize(&input_expr).unwrap();
     println!("Tokens: {tokens:?}");
 
@@ -19,6 +21,5 @@ fn main() {
         println!("No errors");
     }
 
-
-    println!("Calc: {:?}", calculate(&tokens).unwrap())
+    println!("Calc: {:?}", calculate(&tokens, &mut context).unwrap())
 }
