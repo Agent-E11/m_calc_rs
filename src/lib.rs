@@ -1,9 +1,8 @@
-// TODO: Add tests for functions (tokenize, simple_calc, calculate_operator, calculate, extract_token_values)
-
 // TODO: Add support for identifiers / variables (also `;` and a "context" to store variables?)
 // TODO: Add support for mathematical constants, like: pi, tau, e, sqrt 2, golden ratio (phi), (written like `ConstStart, Id(...)`, parsed to `Const`)
 // TODO: Add support for user defined functions (define using uppercase characters?)
 // TODO: Add a `Token::Empty`
+// TODO: Make `parse_assignments` not calculate anything if the expression has an `Id`. So `a=b+4*5` would be stored as `a=b+f*5` and not `a=b+20`
 
 pub mod calc {
     use std::cmp::Ordering;
@@ -266,14 +265,21 @@ pub mod calc {
         println!("Started `calculate`");
 
         // Delete trailing `Op(LnBr)`
-        if tokens.ends_with(&[Token::Op(Oper::LnBr)]) { tokens.pop(); println!("Deleted trailing `Op(LnBr)`"); }
+        if tokens.ends_with(&[Token::Op(Oper::LnBr)]) {
+            tokens.pop();
+            println!("Deleted trailing `Op(LnBr)`");
+        }
 
         // Check syntax, return `Err` if any
         simple_syntax_check(&tokens)?;
 
-        // Substitute variables for their values
-        // TODO:
+        println!("`context` before assignments: `{context:?}`");
+        // TODO: 
         let mut tokens = parse_assignment(tokens, context)?;
+        println!("`context` after assignments: `{context:?}`");
+        
+        // Make substitutions
+        let mut tokens = substitute_assignments(tokens, context)?;
         
         if tokens.is_empty() { return Ok(Token::Id(String::from("empty"))); }
 
@@ -418,6 +424,51 @@ pub mod calc {
 
         println!("New tokens: `{new_tokens:?}`");
         Ok(new_tokens)
+    }
+
+    fn substitute_assignments(tokens: Vec<Token>, context: &HashMap<String, Vec<Token>>) -> Result<Vec<Token>, CalcErr> {
+        let mut tokens = tokens;
+        // TODO: Check for `Op(Eql)`
+
+        // FIXME: This gets stuck in a loop and prints the first `println` forever
+        let mut i = 0;
+        loop {
+            println!("Token at `{i}`: `{:?}`", tokens.get(i));
+            match tokens.get(i) {
+                None => break,
+                Some(t) => if let Token::Id(s) = t {
+                    println!("The token is `Some`");
+                    let value = match context.get(s) {
+                        None => {
+                            i += 1;
+                            continue;
+                        },
+                        Some(v) => {println!("Token is: `{v:?}`"); v},
+                    };
+
+                    let mut enclosed = vec![Token::Op(Oper::LPar)];
+                    enclosed.extend(value.clone());
+                    enclosed.push(Token::Op(Oper::RPar));
+
+                    println!("`{s}` = `{enclosed:?}`");
+                    println!("Removing `{:?}`", tokens[i]);
+                    tokens.remove(i);
+
+                    tokens.splice(i..i, enclosed.clone());
+                    println!("Substituted:\n`{tokens:?}`");
+
+                    i = 0;
+                    continue;
+                } else {
+                    println!("Token is not an `Id`");
+                }
+            }
+
+            i += 1;
+        };
+
+
+        Ok(tokens)
     }
 
     /// Generates a `(f32, Oper, f32)` containing the same values as the given `&Vec<Token>`
@@ -789,22 +840,30 @@ pub mod calc {
         fn test_calculate() {
             let mut context: HashMap<String, Vec<Token>> = HashMap::new();
 
-            let tokens1 = vec![Num(4.0), Op(Add), Num(2.0), Op(Mul), Num(2.0)]; // Order of operations
-            let tokens2 = vec![Num(2.0), Op(Sub), Num(3.0), Op(Add), Num(4.0), Op(Mod), Num(5.0), Op(Div), Num(6.0), Op(Mul), Num(7.0), Op(Exp), Num(8.0)];
-            let tokens3 = vec![Op(LPar), Num(4.0), Op(Add), Num(2.0), Op(RPar), Op(Mul), Num(2.0)]; // Parentheses
-            let tokens4 = vec![Op(LPar), Num(2.0), Op(RPar)]; // Unnecessary parentheses
-            let tokens5 = vec![Num(2.0), Op(LPar), Num(3.0), Op(RPar)]; // Implicit multiplication
-            let tokens6 = vec![Op(FnStart), Id(String::from("sqrt")), Op(LPar), Num(4.0), Op(RPar), Op(FnStart), Id(String::from("log")), Op(LPar), Num(100.0), Op(RPar)]; // Functions
-            let tokens7 = vec![Num(1.0), Op(Add), Num(2.0), Op(LnBr)]; // Trailing `Op(LnBr)`
-            
+            let tokens1  = vec![Num(4.0), Op(Add), Num(2.0), Op(Mul), Num(2.0)]; // Order of operations
+            let tokens2  = vec![Num(2.0), Op(Sub), Num(3.0), Op(Add), Num(4.0), Op(Mod), Num(5.0), Op(Div), Num(6.0), Op(Mul), Num(7.0), Op(Exp), Num(8.0)]; // Very long and complicated
+            let tokens3  = vec![Op(LPar), Num(4.0), Op(Add), Num(2.0), Op(RPar), Op(Mul), Num(2.0)]; // Parentheses
+            let tokens4  = vec![Op(LPar), Num(2.0), Op(RPar)]; // Unnecessary parentheses
+            let tokens5  = vec![Num(2.0), Op(LPar), Num(3.0), Op(RPar)]; // Implicit multiplication
+            let tokens6  = vec![Op(FnStart), Id(String::from("sqrt")), Op(LPar), Num(4.0), Op(RPar), Op(FnStart), Id(String::from("log")), Op(LPar), Num(100.0), Op(RPar)]; // Functions
+            let tokens7  = vec![Num(1.0), Op(Add), Num(2.0), Op(LnBr)]; // Trailing `Op(LnBr)`
+            let tokens8  = vec![Id(String::from("a")), Op(Eql), Num(20.0), Op(LnBr), Num(1.0), Op(Add), Num(2.0)]; // Assignment and calculate
+            let tokens9  = vec![Num(5.0), Op(Mul), Id(String::from("a"))]; // Assignment substitution
+            let tokens10 = vec![Id(String::from("b")), Op(Eql), Num(1.0), Op(Add), Num(2.0), Op(LnBr), Num(4.0), Op(Mul), Id(String::from("b"))]; // Order of operations
 
-            assert_eq!(Token::Num(8.0), calculate(&tokens1, &mut context).unwrap());
-            assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2, &mut context).unwrap());
-            assert_eq!(Token::Num(12.0), calculate(&tokens3, &mut context).unwrap());
-            assert_eq!(Token::Num(2.0), calculate(&tokens4, &mut context).unwrap());
-            assert_eq!(Token::Num(6.0), calculate(&tokens5, &mut context).unwrap());
-            assert_eq!(Token::Num(4.0), calculate(&tokens6, &mut context).unwrap());
-            assert_eq!(Token::Num(3.0), calculate(&tokens7, &mut context).unwrap());
+            assert_eq!(Token::Num(8.0), calculate(&tokens1, &mut context).unwrap()); println!("----- 1 -----"); // Order of operations
+            assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2, &mut context).unwrap()); println!("----- 2 -----"); // Very long and complicated
+            assert_eq!(Token::Num(12.0), calculate(&tokens3, &mut context).unwrap()); println!("----- 3 -----"); // Parentheses
+            assert_eq!(Token::Num(2.0), calculate(&tokens4, &mut context).unwrap()); println!("----- 4 -----"); // Unnecessary parentheses
+            assert_eq!(Token::Num(6.0), calculate(&tokens5, &mut context).unwrap()); println!("----- 5 -----"); // Implicit multiplication
+            assert_eq!(Token::Num(4.0), calculate(&tokens6, &mut context).unwrap()); println!("----- 6 -----"); // Functions
+            assert_eq!(Token::Num(3.0), calculate(&tokens7, &mut context).unwrap()); println!("----- 7 -----"); // Trailing `Op(LnBr)`
+            assert_eq!(Token::Num(3.0), calculate(&tokens8, &mut context).unwrap()); println!("----- 8 -----"); // Assign and calculate
+            assert_eq!(Token::Num(100.0), calculate(&tokens9, &mut context).unwrap()); println!("----- 9 -----"); // Assignment substitutions
+            assert_eq!(Token::Num(12.0), calculate(&tokens10, &mut context).unwrap()); println!("----- 10 -----"); // Order of operations
+
+
+            assert_eq!(&vec![Num(20.0)], context.get("a").expect(""));
         }
 
         #[test]
@@ -818,7 +877,7 @@ pub mod calc {
 
             assert_eq!(res, vec![Num(2.0), Op(LnBr)]);
 
-            let x = context.get(&String::from("x"))
+            let x = context.get("x")
                 .expect("`x` should not be `None`");
 
             assert_eq!(x, &vec![Num(2.0)], "`x` should be `vec![Num(2.0)]` not `{x:?}`");
@@ -834,7 +893,7 @@ pub mod calc {
             let y = context.get("y")
                 .expect("`y` should not be `None`");
 
-            assert_eq!(y, &vec![Num(2.0)], "`y` should be `vec![Num(2.0)]` (same as `x`) not `{y:?}`");
+            assert_eq!(y, &vec![Id(String::from("x"))], "`y` should be `[Id(\"x\")]` not `{y:?}`");
 
             let tokens3 = vec![
                 Id(String::from("a")), Op(Eql), Num(10.0), Op(LnBr),
@@ -852,8 +911,23 @@ pub mod calc {
                 .expect("`c` should not be `None`");
 
             assert_eq!(a, &vec![Num(10.0)]);
-            assert_eq!(b, &vec![Num(10.0)]);
-            assert_eq!(c, &vec![Num(10.0)]);
+            assert_eq!(b, &vec![Id(String::from("a"))]);
+            assert_eq!(c, &vec![Id(String::from("b"))]);
+        }
+
+        #[test]
+        fn test_substitute_assignment() {
+            let context = HashMap::from([
+                (String::from("x"), vec![Num(2.0)]),
+                (String::from("y"), vec![Num(4.0), Op(Add), Num(3.0)]),
+                (String::from("z"), vec![Id(String::from("x"))])
+            ]);
+
+            let tokens1 = vec![Num(2.0), Op(Mul), Id(String::from("x"))];
+            let tokens2 = vec![Id(String::from("z"))];
+
+            assert_eq!(vec![Num(2.0), Op(Mul), Op(LPar), Num(2.0), Op(RPar)], substitute_assignments(tokens1, &context).expect(""));
+            assert_eq!(vec![Op(LPar), Op(LPar), Num(2.0), Op(RPar), Op(RPar)], substitute_assignments(tokens2, &context).expect(""));
         }
 
         #[test]
