@@ -420,7 +420,7 @@ pub mod calc {
         Ok(new_tokens)
     }
 
-    /// Generates a `(String, String, String)` containing the same values as the given `&Vec<Token>`
+    /// Generates a `(f32, Oper, f32)` containing the same values as the given `&Vec<Token>`
     fn extract_token_values(tokens: &Vec<Token>) -> Result<(f32, Oper, f32), CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
 
