@@ -21,5 +21,5 @@ fn main() {
         println!("No errors");
     }
 
-    println!("Calc: {:?}", calculate(&tokens, &mut context).unwrap())
+    println!("\n--- Calculation ---\nResult:  {:?}\nContext: {:?}", calculate(&tokens, &mut context), context);
 }

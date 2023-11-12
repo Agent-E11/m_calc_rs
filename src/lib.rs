@@ -3,8 +3,10 @@
 // TODO: Add support for identifiers / variables (also `;` and a "context" to store variables?)
 // TODO: Add support for mathematical constants, like: pi, tau, e, sqrt 2, golden ratio (phi), (written like `ConstStart, Id(...)`, parsed to `Const`)
 // TODO: Add support for user defined functions (define using uppercase characters?)
+// TODO: Add a `Token::Empty`
 
 pub mod calc {
+    use std::cmp::Ordering;
     use std::num::ParseFloatError;
     use std::collections::HashMap;
 
@@ -89,7 +91,7 @@ pub mod calc {
             Oper::Sub => Ok(Token::Num(left-right)),
             Oper::LPar => Err(CalcErr::from("`(` is an invalid calculation operator")),
             Oper::RPar => Err(CalcErr::from("`)` is an invalid calculation operator")),
-            Oper::Equ => Err(CalcErr::from("`=` is an invalid calculation operator")),
+            Oper::Eql => Err(CalcErr::from("`=` is an invalid calculation operator")),
             Oper::LnBr => Err(CalcErr::from("`;` is an invalid calculation operator")),
             Oper::FnStart => Err(CalcErr::from("`\\` is an invalid calculation operator")),
         };
@@ -263,12 +265,18 @@ pub mod calc {
 
         println!("Started `calculate`");
 
+        // Delete trailing `Op(LnBr)`
+        if tokens.ends_with(&[Token::Op(Oper::LnBr)]) { tokens.pop(); println!("Deleted trailing `Op(LnBr)`"); }
+
         // Check syntax, return `Err` if any
         simple_syntax_check(&tokens)?;
 
         // Substitute variables for their values
         // TODO:
+        let mut tokens = parse_assignment(tokens, context)?;
         
+        if tokens.is_empty() { return Ok(Token::Id(String::from("empty"))); }
+
         // Pass 1: Parse each function, calculate each function
         tokens = parse_functions(tokens)?.into_iter().map(|t| {
             if let Token::Fn(f) = t {
@@ -353,13 +361,64 @@ pub mod calc {
         tokens = calculate_operator(tokens, &[Oper::Add, Oper::Sub])?;
         println!("After `+, -`: {tokens:?}");
 
-        // If we end up with multiple tokens at the end, return an error
-        if tokens.len() > 1 || !matches!(tokens[0], Token::Num(_)) {
-            return Err(CalcErr::from("calculation error, final result was not a single `Token::Num`"));
-        }
-
         Ok(tokens[0].clone())
     } 
+
+    /// Takes a `Vec<Token>` and a `Hashmap<String, Vec<Token>>`.
+    /// Takes all the assignment expressions in the `Vec<Token>`,
+    /// deletes them and converts it into a key value pair in the `Hashmap<String, Vec<Token>>`
+    fn parse_assignment(tokens: Vec<Token>, context: &mut HashMap<String, Vec<Token>>) -> Result<Vec<Token>, CalcErr> {
+        let exprs = tokens.split(|t| t == &Token::Op(Oper::LnBr));
+        let mut new_tokens: Vec<Token> = Vec::new();
+
+        println!("Starting `parse_assignments`");
+
+        for expr in exprs {
+            println!("Expression: `{expr:?}`");
+            // Validate syntax
+            // Check if empty
+            if expr.is_empty() { continue; }
+
+            match expr.iter().filter(|&t| *t == Token::Op(Oper::Eql)).count().cmp(&1) {
+                // If there is more than 1 `Op(Eql)`, return an error
+                Ordering::Greater => return Err(CalcErr(format!("multiple `Op(Eql)` in expression `{}`", "UNIMPLEMENTED"))),
+                // If it is not an assignment, add the expression to `new_tokens` (it will be calculated later)
+                Ordering::Less => {
+                    new_tokens.append(&mut expr.to_vec());
+                    new_tokens.push(Token::Op(Oper::LnBr))
+                },
+                // If there is 1 `Op(Eql)`, parse the assignment expression
+                Ordering::Equal => {
+                    println!("There is 1 assignment in `expr`");
+                    let id;
+                    if let Token::Id(i) = &expr[0] {
+                        id = i.clone(); // TODO: might not need to be cloned
+                        println!("The `id` is `{id}`");
+                    } else {
+                        return Err(CalcErr::from("first token of assignment expression must be an `Id`"));
+                    }
+                    if expr[1] != Token::Op(Oper::Eql) {
+                        println!("Second token must be `Op(Eql)` not `{:?}`", expr[1]);
+                        return Err(CalcErr(format!("second token of assignment expression must be an `Op(Eql)`, not `{}`", expr[1])));
+                    }
+
+                    println!("Calculating insert value:");
+                    let insert_value = calculate(&expr[2..expr.len()].to_vec(), context)?;
+                    println!("The value assigned to `{id}` is `{insert_value}`");
+
+                    // Add the calculated value to the `context`
+                    context.insert(
+                        id, 
+                        vec![insert_value]
+                    );
+                    println!("Context: `{context:?}`");
+                }
+            }
+        }
+
+        println!("New tokens: `{new_tokens:?}`");
+        Ok(new_tokens)
+    }
 
     /// Generates a `(String, String, String)` containing the same values as the given `&Vec<Token>`
     fn extract_token_values(tokens: &Vec<Token>) -> Result<(f32, Oper, f32), CalcErr> {
@@ -416,7 +475,10 @@ pub mod calc {
                     },
                     None => break,
                 },
-                Token::Op(_) => (),
+                Token::Op(_) => match tokens.get(i+1) {
+                    Some(_) => (),
+                    None => break,
+                },
             }
 
             i += 1;
@@ -430,11 +492,13 @@ pub mod calc {
     pub fn simple_syntax_check(tokens: &[Token]) -> Result<(), CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
 
+        println!("starting syntax check");
+
         // Check dangling operators
         // Beginning
         if let Token::Op(o) = &tokens[0] {
             match o {
-                Oper::RPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Equ | Oper::LnBr => {
+                Oper::RPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Eql | Oper::LnBr => {
                     return Err(CalcErr::from("first token is invalid"));
                 },
                 Oper::FnStart | Oper::LPar | Oper::Sub => (),
@@ -443,7 +507,7 @@ pub mod calc {
         // End
         if let Token::Op(o) = &tokens.last().unwrap() {
             match o {
-                Oper::LPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Sub | Oper::Equ => {
+                Oper::LPar | Oper::Exp | Oper::Mul | Oper::Div | Oper::Mod | Oper::Add | Oper::Sub | Oper::Eql => {
                     return Err(CalcErr::from("last token is invalid"));
                 },
                 Oper::FnStart | Oper::RPar | Oper::LnBr => (),
@@ -474,15 +538,17 @@ pub mod calc {
             return Err(CalcErr(format!("unclosed parentheses at `{last_paren}`")));
         }
         
+        println!("tokens: {tokens:?}");
         // Check for 2 `Op` in a row
         for (i, token) in tokens.iter().enumerate() {
+            println!("`{token}` at `{i}`");
             if let Token::Op(op1) = token {
                 match op1 {
-                    Oper::RPar => continue,
+                    Oper::RPar | Oper::LnBr => continue,
                     _ => {
                         if let Token::Op(op2) = &tokens[i+1] {
                             match op2 {
-                                Oper::LPar | Oper::LnBr => continue,
+                                Oper::LPar => continue,
                                 _ => return Err(CalcErr(format!("2 `Op` in a row at {i}"))),
                             }
                         }
@@ -505,7 +571,7 @@ pub mod calc {
         Mod, // Modulus
         Add, // Add
         Sub, // Subtract
-        Equ, // Assign (equal sign)
+        Eql, // Assign (equal sign)
         LnBr, // Line break
         FnStart, // Signifies that the next token (an Id), will be the name of a function
     }
@@ -520,7 +586,7 @@ pub mod calc {
                 "%" => Self::Mod,
                 "+" => Self::Add,
                 "-" => Self::Sub,
-                "=" => Self::Equ,
+                "=" => Self::Eql,
                 ";" => Self::LnBr,
                 "\\" => Self::FnStart,
                 _ => panic!(),
@@ -640,7 +706,7 @@ pub mod calc {
     mod tests {
         use super::*;
         use super::Token::{Num, Op, Id, Fn};
-        use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub, Equ, LnBr, FnStart};
+        use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub, Eql, LnBr, FnStart};
         use super::Func::{Sqrt, Cbrt, Log, Floor, Ceil, Abs, Round, Sin, Cos, Tan};
 
         #[test]
@@ -729,7 +795,7 @@ pub mod calc {
             let tokens4 = vec![Op(LPar), Num(2.0), Op(RPar)]; // Unnecessary parentheses
             let tokens5 = vec![Num(2.0), Op(LPar), Num(3.0), Op(RPar)]; // Implicit multiplication
             let tokens6 = vec![Op(FnStart), Id(String::from("sqrt")), Op(LPar), Num(4.0), Op(RPar), Op(FnStart), Id(String::from("log")), Op(LPar), Num(100.0), Op(RPar)]; // Functions
-            // let tokens7 = vec![]; // Implicit multiplication
+            let tokens7 = vec![Num(1.0), Op(Add), Num(2.0), Op(LnBr)]; // Trailing `Op(LnBr)`
             
 
             assert_eq!(Token::Num(8.0), calculate(&tokens1, &mut context).unwrap());
@@ -738,11 +804,56 @@ pub mod calc {
             assert_eq!(Token::Num(2.0), calculate(&tokens4, &mut context).unwrap());
             assert_eq!(Token::Num(6.0), calculate(&tokens5, &mut context).unwrap());
             assert_eq!(Token::Num(4.0), calculate(&tokens6, &mut context).unwrap());
+            assert_eq!(Token::Num(3.0), calculate(&tokens7, &mut context).unwrap());
         }
 
         #[test]
-        fn test_calculate_assignment() {
-            let context: HashMap<String, Vec<Token>> = HashMap::new();
+        fn test_parse_assignment() {
+            let mut context: HashMap<String, Vec<Token>> = HashMap::new();
+            
+            let tokens1 = vec![Id(String::from("x")), Op(Eql), Num(2.0), Op(LnBr), Num(2.0)]; // Assign to `x`, 
+
+            let res = parse_assignment(tokens1, &mut context)
+                .expect("`parse_assignments` returned an error");
+
+            assert_eq!(res, vec![Num(2.0), Op(LnBr)]);
+
+            let x = context.get(&String::from("x"))
+                .expect("`x` should not be `None`");
+
+            assert_eq!(x, &vec![Num(2.0)], "`x` should be `vec![Num(2.0)]` not `{x:?}`");
+        
+
+            let tokens2 = vec![Id(String::from("y")), Op(Eql), Id(String::from("x"))];
+
+            let res = parse_assignment(tokens2, &mut context)
+                .expect("`parse_assignments` returned an error");
+
+            assert_eq!(res, vec![]);
+
+            let y = context.get("y")
+                .expect("`y` should not be `None`");
+
+            assert_eq!(y, &vec![Num(2.0)], "`y` should be `vec![Num(2.0)]` (same as `x`) not `{y:?}`");
+
+            let tokens3 = vec![
+                Id(String::from("a")), Op(Eql), Num(10.0), Op(LnBr),
+                Id(String::from("b")), Op(Eql), Id(String::from("a")), Op(LnBr),
+                Id(String::from("c")), Op(Eql), Id(String::from("b"))
+            ];
+
+            let _ = parse_assignment(tokens3, &mut context);
+
+            let a = context.get("a")
+                .expect("`a` should not be `None`");
+            let b = context.get("b")
+                .expect("`b` should not be `None`");
+            let c = context.get("c")
+                .expect("`c` should not be `None`");
+
+            assert_eq!(a, &vec![Num(10.0)]);
+            assert_eq!(b, &vec![Num(10.0)]);
+            assert_eq!(c, &vec![Num(10.0)]);
         }
 
         #[test]
