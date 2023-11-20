@@ -1,8 +1,5 @@
-// TODO: Add support for identifiers / variables (also `;` and a "context" to store variables?)
 // TODO: Add support for mathematical constants, like: pi, tau, e, sqrt 2, golden ratio (phi), (written like `ConstStart, Id(...)`, parsed to `Const`)
 // TODO: Add support for user defined functions (define using uppercase characters?)
-// TODO: Add a `Token::Empty`
-// TODO: Make `parse_assignments` not calculate anything if the expression has an `Id`. So `a=b+4*5` would be stored as `a=b+f*5` and not `a=b+20`
 
 pub mod calc {
     use std::cmp::Ordering;
@@ -52,7 +49,6 @@ pub mod calc {
                         };
                     }
                     tokens.push(Token::Id(expr[index..last_processed as usize + 1].to_owned()))
-                    // TODO: Call `unimplemented!()` macro here?
                 },
                 o if !o.is_alphabetic() && !o.is_numeric() => {
                     // If it neither a number, nor a letter,
@@ -274,14 +270,13 @@ pub mod calc {
         simple_syntax_check(&tokens)?;
 
         println!("`context` before assignments: `{context:?}`");
-        // TODO: 
-        let mut tokens = parse_assignment(tokens, context)?;
+        let tokens = parse_assignment(tokens, context)?;
         println!("`context` after assignments: `{context:?}`");
         
         // Make substitutions
         let mut tokens = substitute_assignments(tokens, context)?;
         
-        if tokens.is_empty() { return Ok(Token::Id(String::from("empty"))); }
+        if tokens.is_empty() { return Ok(Token::Empty); }
 
         // Pass 1: Parse each function, calculate each function
         tokens = parse_functions(tokens)?.into_iter().map(|t| {
@@ -408,14 +403,20 @@ pub mod calc {
                         return Err(CalcErr(format!("second token of assignment expression must be an `Op(Eql)`, not `{}`", expr[1])));
                     }
 
-                    println!("Calculating insert value:");
-                    let insert_value = calculate(&expr[2..expr.len()].to_vec(), context)?;
-                    println!("The value assigned to `{id}` is `{insert_value}`");
+                    let insert_value = if expr[2..expr.len()].iter().any(|t| matches!(t, Token::Id(_))) {
+                        println!("contains an `Id`, not calculating");
+                        expr[2..expr.len()].to_vec()
+                    } else {
+                        println!("Does not contain an `Id`, calculating");
+                        [calculate(&expr[2..expr.len()].to_vec(), context)?].to_vec()
+                    };
+
+                    println!("The value assigned to `{id}` is `{insert_value:?}`");
 
                     // Add the calculated value to the `context`
                     context.insert(
                         id, 
-                        vec![insert_value]
+                        insert_value,
                     );
                     println!("Context: `{context:?}`");
                 }
@@ -426,17 +427,22 @@ pub mod calc {
         Ok(new_tokens)
     }
 
+    /// Takes a `Vec<Token>` and replaces all `Id`s with their values defined in the given `context`
     fn substitute_assignments(tokens: Vec<Token>, context: &HashMap<String, Vec<Token>>) -> Result<Vec<Token>, CalcErr> {
         let mut tokens = tokens;
-        // TODO: Check for `Op(Eql)`
 
-        // FIXME: This gets stuck in a loop and prints the first `println` forever
+        if tokens.contains(&Token::Op(Oper::Eql)) {
+            return Err(CalcErr::from("cannot substitute assignments for an expression containing `Op(Eql)`"));
+        }
+
         let mut i = 0;
+        // Loop through all tokens
         loop {
             println!("Token at `{i}`: `{:?}`", tokens.get(i));
             match tokens.get(i) {
                 None => break,
                 Some(t) => if let Token::Id(s) = t {
+                    // If the token is an `Id`, get its associated value in `context`
                     println!("The token is `Some`");
                     let value = match context.get(s) {
                         None => {
@@ -446,15 +452,13 @@ pub mod calc {
                         Some(v) => {println!("Token is: `{v:?}`"); v},
                     };
 
+                    // Enclose the value in parentheses
                     let mut enclosed = vec![Token::Op(Oper::LPar)];
                     enclosed.extend(value.clone());
                     enclosed.push(Token::Op(Oper::RPar));
 
-                    println!("`{s}` = `{enclosed:?}`");
-                    println!("Removing `{:?}`", tokens[i]);
-                    tokens.remove(i);
-
-                    tokens.splice(i..i, enclosed.clone());
+                    // Substitute the `Id` for the `Id`s value
+                    tokens.splice(i..i+1, enclosed.clone());
                     println!("Substituted:\n`{tokens:?}`");
 
                     i = 0;
@@ -466,7 +470,6 @@ pub mod calc {
 
             i += 1;
         };
-
 
         Ok(tokens)
     }
@@ -504,11 +507,14 @@ pub mod calc {
         Ok((*token0, token1.clone(), *token2))
     }
 
-    pub fn convert_implicit_mul(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
+    pub fn convert_implicit_mul(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         // Return error if `tokens` contains parentheses
         if tokens.contains(&Token::Op(Oper::LPar)) || tokens.contains(&Token::Op(Oper::RPar)) {
             return Err(CalcErr::from("cannot call `convert_implicit_mul` on a `Vec<Token>` that contains parentheses"));
         }
+
+        // Delete `Empty` variants
+        let mut tokens: Vec<Token> = tokens.into_iter().filter(|t| !matches!(t, Token::Empty)).collect();
 
         // Insert `Token::Op(Oper::Mul)` between any `Token::Num` or `Token::Id`
         let mut i = 0;
@@ -522,11 +528,11 @@ pub mod calc {
                             i = 0;
                             continue;
                         },
-                        Token::Op(_) => (),
+                        Token::Op(_) | Token::Empty => (),
                     },
                     None => break,
                 },
-                Token::Op(_) => match tokens.get(i+1) {
+                Token::Op(_) | Token::Empty => match tokens.get(i+1) {
                     Some(_) => (),
                     None => break,
                 },
@@ -650,6 +656,7 @@ pub mod calc {
         }
     }
 
+    /// Represents a mathematical function
     #[derive(Debug, PartialEq, Clone)]
     pub enum Func {
         Sqrt(Vec<Token>),
@@ -667,34 +674,34 @@ pub mod calc {
         pub fn calc(&self, context: &mut HashMap<String, Vec<Token>>) -> Result<Token, CalcErr> {
             let error = Err(CalcErr::from("`calculate` did not return a `Token::Num`"));
             match self {
-                Func::Sqrt(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Sqrt(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.sqrt()))
                 } else { error },
-                Func::Cbrt(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Cbrt(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.cbrt()))
                 } else { error },
-                Func::Log(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Log(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.log10()))
                 } else { error },
-                Func::Floor(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Floor(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.floor()))
                 } else { error },
-                Func::Ceil(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Ceil(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.ceil()))
                 } else { error },
-                Func::Abs(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Abs(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.abs()))
                 } else { error },
-                Func::Round(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Round(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.round()))
                 } else { error },
-                Func::Sin(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Sin(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.sin()))
                 } else { error },
-                Func::Cos(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Cos(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.cos()))
                 } else { error },
-                Func::Tan(v) => if let Token::Num(n) = calculate(v, context)? {
+                Self::Tan(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.tan()))
                 } else { error },
             }
@@ -727,14 +734,16 @@ pub mod calc {
         Op(Oper),
         Id(String),
         Fn(Func),
+        Empty,
     }
     impl std::fmt::Display for Token {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Token::Num(v) => write!(f, "Num({v})"),
-                Token::Op(v) => write!(f, "Op({v})"),
-                Token::Id(v) => write!(f, "Id(\"{v}\")"),
-                Token::Fn(v) => write!(f, "Fn({v:?})"),
+                Self::Num(v) => write!(f, "Num({v})"),
+                Self::Op(v) => write!(f, "Op({v})"),
+                Self::Id(v) => write!(f, "Id(\"{v}\")"),
+                Self::Fn(v) => write!(f, "Fn({v:?})"),
+                Self::Empty => write!(f, "Empty"),
             }
         }
     }
@@ -756,7 +765,7 @@ pub mod calc {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use super::Token::{Num, Op, Id, Fn};
+        use super::Token::{Num, Op, Id, Fn, Empty};
         use super::Oper::{LPar, RPar, Exp, Mul, Div, Mod, Add, Sub, Eql, LnBr, FnStart};
         use super::Func::{Sqrt, Cbrt, Log, Floor, Ceil, Abs, Round, Sin, Cos, Tan};
 
@@ -850,6 +859,7 @@ pub mod calc {
             let tokens8  = vec![Id(String::from("a")), Op(Eql), Num(20.0), Op(LnBr), Num(1.0), Op(Add), Num(2.0)]; // Assignment and calculate
             let tokens9  = vec![Num(5.0), Op(Mul), Id(String::from("a"))]; // Assignment substitution
             let tokens10 = vec![Id(String::from("b")), Op(Eql), Num(1.0), Op(Add), Num(2.0), Op(LnBr), Num(4.0), Op(Mul), Id(String::from("b"))]; // Order of operations
+            let tokens11 = vec![Id(String::from("a")), Op(Eql), Num(10.0)]; // Reassignment and empty calculation
 
             assert_eq!(Token::Num(8.0), calculate(&tokens1, &mut context).unwrap()); println!("----- 1 -----"); // Order of operations
             assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2, &mut context).unwrap()); println!("----- 2 -----"); // Very long and complicated
@@ -859,42 +869,44 @@ pub mod calc {
             assert_eq!(Token::Num(4.0), calculate(&tokens6, &mut context).unwrap()); println!("----- 6 -----"); // Functions
             assert_eq!(Token::Num(3.0), calculate(&tokens7, &mut context).unwrap()); println!("----- 7 -----"); // Trailing `Op(LnBr)`
             assert_eq!(Token::Num(3.0), calculate(&tokens8, &mut context).unwrap()); println!("----- 8 -----"); // Assign and calculate
+            assert_eq!(&vec![Num(20.0)], context.get("a").expect(""));
             assert_eq!(Token::Num(100.0), calculate(&tokens9, &mut context).unwrap()); println!("----- 9 -----"); // Assignment substitutions
             assert_eq!(Token::Num(12.0), calculate(&tokens10, &mut context).unwrap()); println!("----- 10 -----"); // Order of operations
-
-
-            assert_eq!(&vec![Num(20.0)], context.get("a").expect(""));
+            assert_eq!(&vec![Num(3.0)], context.get("b").expect(""));
+            assert_eq!(Token::Empty, calculate(&tokens11, &mut context).unwrap()); println!("----- 11 -----"); // Reassignment and empty calculation
+            assert_eq!(&vec![Num(10.0)], context.get("a").expect(""));
         }
 
         #[test]
         fn test_parse_assignment() {
             let mut context: HashMap<String, Vec<Token>> = HashMap::new();
             
-            let tokens1 = vec![Id(String::from("x")), Op(Eql), Num(2.0), Op(LnBr), Num(2.0)]; // Assign to `x`, 
+            let tokens1 = vec![Id(String::from("x")), Op(Eql), Num(2.0), Op(LnBr), Num(2.0)]; // Assign to `x`, trailing expression (`Num(2.0)`) should be returned
 
             let res = parse_assignment(tokens1, &mut context)
-                .expect("`parse_assignments` returned an error");
+                .unwrap();
 
-            assert_eq!(res, vec![Num(2.0), Op(LnBr)]);
+            assert_eq!(res, vec![Num(2.0), Op(LnBr)], "`parse_assignment` should return `[Num(2.0), Op(LnBr)]`");
 
             let x = context.get("x")
-                .expect("`x` should not be `None`");
+                .expect("`context[\"x\"]` should not be `None`");
 
-            assert_eq!(x, &vec![Num(2.0)], "`x` should be `vec![Num(2.0)]` not `{x:?}`");
+            assert_eq!(x, &vec![Num(2.0)], "`context[\"x\"]` should be `vec![Num(2.0)]` not `{x:?}`");
         
 
             let tokens2 = vec![Id(String::from("y")), Op(Eql), Id(String::from("x"))];
 
             let res = parse_assignment(tokens2, &mut context)
-                .expect("`parse_assignments` returned an error");
+                .unwrap();
 
-            assert_eq!(res, vec![]);
+            assert_eq!(res, vec![], "`parse_assignment` should return `[]`");
 
             let y = context.get("y")
-                .expect("`y` should not be `None`");
+                .expect("`context[\"y\"]` should not be `None`");
 
-            assert_eq!(y, &vec![Id(String::from("x"))], "`y` should be `[Id(\"x\")]` not `{y:?}`");
+            assert_eq!(y, &vec![Id(String::from("x"))], "`context[\"y\"]` should be `[Id(\"x\")]` not `{y:?}`"); // `y` should be `x` (a "pointer" to a "pointer"), if `x` changes, then so will `y`
 
+            // Multiple assignments
             let tokens3 = vec![
                 Id(String::from("a")), Op(Eql), Num(10.0), Op(LnBr),
                 Id(String::from("b")), Op(Eql), Id(String::from("a")), Op(LnBr),
@@ -925,9 +937,11 @@ pub mod calc {
 
             let tokens1 = vec![Num(2.0), Op(Mul), Id(String::from("x"))];
             let tokens2 = vec![Id(String::from("z"))];
+            let tokens3 = vec![Id(String::from("x")), Op(Eql), Num(100.0)];
 
-            assert_eq!(vec![Num(2.0), Op(Mul), Op(LPar), Num(2.0), Op(RPar)], substitute_assignments(tokens1, &context).expect(""));
-            assert_eq!(vec![Op(LPar), Op(LPar), Num(2.0), Op(RPar), Op(RPar)], substitute_assignments(tokens2, &context).expect(""));
+            assert_eq!(vec![Num(2.0), Op(Mul), Op(LPar), Num(2.0), Op(RPar)], substitute_assignments(tokens1, &context).unwrap());
+            assert_eq!(vec![Op(LPar), Op(LPar), Num(2.0), Op(RPar), Op(RPar)], substitute_assignments(tokens2, &context).unwrap());
+            assert!(substitute_assignments(tokens3, &context).is_err(), "should return error if it contains an `Op(Eql)`")
         }
 
         #[test]
@@ -937,12 +951,14 @@ pub mod calc {
             let tokens3 = vec![Num(4.0), Id(String::from("a"))]; // `Num` `Id`
             let tokens4 = vec![Fn(Sqrt(vec![Num(2.0)])), Fn(Sqrt(vec![Num(2.0)]))]; // `Fn`
             let tokens5 = vec![Fn(Sqrt(vec![Num(2.0)])), Num(2.0)]; // `Fn` `Num`
+            let tokens6 = vec![Num(5.0), Empty, Num(5.0)]; // `Num` `Empty` `Num`
 
             assert_eq!(vec![Num(4.0), Op(Mul), Num(4.0)], convert_implicit_mul(tokens1).unwrap());
             assert_eq!(vec![Id(String::from("a")), Op(Mul), Id(String::from("b"))], convert_implicit_mul(tokens2).unwrap());
             assert_eq!(vec![Num(4.0), Op(Mul), Id(String::from("a"))], convert_implicit_mul(tokens3).unwrap());
             assert_eq!(vec![Fn(Sqrt(vec![Num(2.0)])), Op(Mul), Fn(Sqrt(vec![Num(2.0)]))], convert_implicit_mul(tokens4).unwrap());
             assert_eq!(vec![Fn(Sqrt(vec![Num(2.0)])), Op(Mul), Num(2.0)], convert_implicit_mul(tokens5).unwrap());
+            assert_eq!(vec![Num(5.0), Op(Mul), Num(5.0)], convert_implicit_mul(tokens6).unwrap());
         }
 
         #[test]
