@@ -1,25 +1,17 @@
 use std::io;
 use std::collections::HashMap;
 
-use m_calc::calc::{tokenize, calculate, simple_syntax_check};
+use m_calc::{calculate, tokenize};
 
 fn main() {
 
-    let mut input_expr = String::new();
+    let mut buf = String::new();
 
-    io::stdin().read_line(&mut input_expr).expect("");
+    io::stdin().read_line(&mut buf).unwrap();
 
     let mut context = HashMap::new();
-    let tokens = tokenize(&input_expr).unwrap();
+    let tokens = tokenize(&buf).unwrap();
     println!("Tokens: {tokens:?}");
-
-    let res = simple_syntax_check(&tokens);
-
-    if let Err(e) = &res {
-        println!("Error:\n{e:?}");
-    } else {
-        println!("No errors");
-    }
 
     println!("\n--- Calculation ---\nResult:  {:?}\nContext: {:?}", calculate(&tokens, &mut context), context);
 }

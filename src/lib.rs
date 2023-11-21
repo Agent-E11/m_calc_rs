@@ -1,3 +1,6 @@
+pub use calc::calculate;
+pub use calc::tokenize;
+
 pub mod calc {
     use std::cmp::Ordering;
     use std::num::ParseFloatError;
@@ -388,13 +391,12 @@ pub mod calc {
                 // If there is 1 `Op(Eql)`, parse the assignment expression
                 Ordering::Equal => {
                     println!("There is 1 assignment in `expr`");
-                    let id;
-                    if let Token::Id(i) = &expr[0] {
-                        id = i.clone(); // TODO: might not need to be cloned
-                        println!("The `id` is `{id}`");
+                    let id = if let Token::Id(i) = &expr[0] {
+                        println!("The `id` is `{i}`");
+                        i
                     } else {
                         return Err(CalcErr::from("first token of assignment expression must be an `Id`"));
-                    }
+                    };
                     if expr[1] != Token::Op(Oper::Eql) {
                         println!("Second token must be `Op(Eql)` not `{:?}`", expr[1]);
                         return Err(CalcErr(format!("second token of assignment expression must be an `Op(Eql)`, not `{}`", expr[1])));
@@ -412,7 +414,7 @@ pub mod calc {
 
                     // Add the calculated value to the `context`
                     context.insert(
-                        id, 
+                        id.to_string(), 
                         insert_value,
                     );
                     println!("Context: `{context:?}`");
