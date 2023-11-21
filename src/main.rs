@@ -1,7 +1,7 @@
 use std::io;
 use std::collections::HashMap;
 
-use string_calc::calc::{tokenize, calculate, simple_syntax_check};
+use m_calc::calc::{tokenize, calculate, simple_syntax_check};
 
 fn main() {
 

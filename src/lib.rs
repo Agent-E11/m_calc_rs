@@ -1,6 +1,3 @@
-// TODO: Add support for mathematical constants, like: pi, tau, e, sqrt 2, golden ratio (phi), (written like `ConstStart, Id(...)`, parsed to `Const`)
-// TODO: Add support for user defined functions (define using uppercase characters?)
-
 pub mod calc {
     use std::cmp::Ordering;
     use std::num::ParseFloatError;
