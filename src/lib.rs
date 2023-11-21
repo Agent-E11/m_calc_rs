@@ -140,7 +140,7 @@ pub mod calc {
     }
 
     /// Takes a `Vec<Token>` and replaces all occurrences of `Op(FnStart), Id(), Op(LPar), ... , Op(RPar)` with `Fn(Func(...))`
-    pub fn parse_functions(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
+    fn parse_functions(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         let mut i = 0;
         println!("\nstarting function parse");
         loop {
@@ -223,7 +223,7 @@ pub mod calc {
     }
 
     /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
-    pub fn calculate_operator(tokens: Vec<Token>, operators: &[Oper]) -> Result<Vec<Token>, CalcErr> {
+    fn calculate_operator(tokens: Vec<Token>, operators: &[Oper]) -> Result<Vec<Token>, CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
 
         let mut tokens = tokens;
@@ -506,7 +506,7 @@ pub mod calc {
         Ok((*token0, token1.clone(), *token2))
     }
 
-    pub fn convert_implicit_mul(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
+    fn convert_implicit_mul(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         // Return error if `tokens` contains parentheses
         if tokens.contains(&Token::Op(Oper::LPar)) || tokens.contains(&Token::Op(Oper::RPar)) {
             return Err(CalcErr::from("cannot call `convert_implicit_mul` on a `Vec<Token>` that contains parentheses"));
@@ -545,7 +545,7 @@ pub mod calc {
 
     /// Does some simple syntax checks on a `Vec<Token>` and returns an error if there are any mistakes
     /// 
-    pub fn simple_syntax_check(tokens: &[Token]) -> Result<(), CalcErr> {
+    fn simple_syntax_check(tokens: &[Token]) -> Result<(), CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
 
         println!("starting syntax check");
