@@ -1,3 +1,6 @@
+// TODO: Include `README.md` in the doc tests
+// https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html#include-items-only-when-collecting-doctests
+
 pub use calc::calculate;
 pub use calc::tokenize;
 pub use calc::display_expr;
@@ -6,6 +9,7 @@ pub mod calc {
     use std::cmp::Ordering;
     use std::num::ParseFloatError;
     use std::collections::HashMap;
+
 
     /// Creates a `String` representation of a `Vec<Token>`
     pub fn display_expr(tokens: &Vec<Token>) -> String {
