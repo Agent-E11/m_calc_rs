@@ -1,5 +1,6 @@
 pub use calc::calculate;
 pub use calc::tokenize;
+pub use calc::display_expr;
 
 pub mod calc {
     use std::cmp::Ordering;
