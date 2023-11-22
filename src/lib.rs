@@ -6,6 +6,11 @@ pub mod calc {
     use std::num::ParseFloatError;
     use std::collections::HashMap;
 
+    /// Creates a `String` representation of a `Vec<Token>`
+    pub fn display_expr(tokens: &Vec<Token>) -> String {
+        tokens.iter().map(|token| token.display()).collect()
+    }
+
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
     pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcErr> {
 
@@ -32,7 +37,7 @@ pub mod calc {
                         last_processed = indx_char.0 as i32;
                         indx_char = match indcs_chars.next() {
                             Some(i_c) => i_c,
-                            None => return Err(CalcErr::from("index out of bounds")),
+                            None => break,
                         };
                     }
                     tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?));
@@ -45,7 +50,7 @@ pub mod calc {
                         last_processed = indx_char.0 as i32;
                         indx_char = match indcs_chars.next() {
                             Some(i_c) => i_c,
-                            None => return Err(CalcErr::from("index out of bounds")),
+                            None => break,
                         };
                     }
                     tokens.push(Token::Id(expr[index..last_processed as usize + 1].to_owned()))
@@ -631,6 +636,23 @@ pub mod calc {
         LnBr, // Line break
         FnStart, // Signifies that the next token (an Id), will be the name of a function
     }
+    impl Oper {
+        pub fn display(&self) -> String {
+            match self {
+                Self::LPar => "(",
+                Self::RPar => ")",
+                Self::Exp => "^",
+                Self::Mul => "*",
+                Self::Div => "/",
+                Self::Mod => "%",
+                Self::Add => "+",
+                Self::Sub => "-",
+                Self::Eql => "=",
+                Self::LnBr => ";",
+                Self::FnStart => "\\",
+            }.to_string()
+        }
+    }
     impl From<&str> for Oper {
         fn from(value: &str) -> Self {
             match value {
@@ -705,6 +727,23 @@ pub mod calc {
                 } else { error },
             }
         }
+    
+        pub fn display(&self) -> String {
+            let (fn_id, tokens) = match self {
+                Self::Sqrt(v) => ("sqrt", v.clone()),
+                Self::Cbrt(v) => ("cbrt", v.clone()),
+                Self::Log(v) => ("log", v.clone()),
+                Self::Floor(v) => ("floor", v.clone()),
+                Self::Ceil(v) => ("ceil", v.clone()),
+                Self::Abs(v) => ("abs", v.clone()),
+                Self::Round(v) => ("round", v.clone()),
+                Self::Sin(v) => ("sin", v.clone()),
+                Self::Cos(v) => ("cos", v.clone()),
+                Self::Tan(v) => ("tan", v.clone()),
+            };
+
+            format!("\\{}({})", fn_id, display_expr(&tokens))
+        }
     }
     impl TryFrom<(&str, Vec<Token>)> for Func {
         type Error = CalcErr;
@@ -735,6 +774,18 @@ pub mod calc {
         Fn(Func),
         Empty,
     }
+    impl Token {
+        pub fn display(&self) -> String {
+            match self {
+                Self::Num(n) => n.to_string(),
+                Self::Op(o) => o.display(),
+                Self::Id(i) => i.to_string(),
+                Self::Fn(f) => f.display(),
+                Self::Empty => "".to_string(),
+            }
+        }
+    }
+
     impl std::fmt::Display for Token {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
@@ -769,9 +820,48 @@ pub mod calc {
         use super::Func::{Sqrt, Cbrt, Log, Floor, Ceil, Abs, Round, Sin, Cos, Tan};
 
         #[test]
+        fn test_token_display() {
+            let t1 = Num(2.0);
+            let t2 = Num(3.15);
+            let t3 = Op(LPar);
+            let t4 = Id(String::from("time"));
+            let t5 = Fn(Sqrt(vec![]));
+            let t6 = Fn(Cos(vec![Num(5.0)]));
+            let t7 = Fn(Tan(vec![Num(1.03), Op(Add), Num(2.11)]));
+            let t8 = Empty;
+
+            assert_eq!("2", t1.display());
+            assert_eq!("3.15", t2.display());
+            assert_eq!("(", t3.display());
+            assert_eq!("time", t4.display());
+            assert_eq!("\\sqrt()", t5.display());
+            assert_eq!("\\cos(5)", t6.display());
+            assert_eq!("\\tan(1.03+2.11)", t7.display());
+            assert_eq!("", t8.display());
+        }
+
+        #[test]
+        fn test_oper_display() {
+            // TODO:
+        }
+
+        #[test]
+        fn test_func_display() {
+            // TODO:
+        }
+
+        #[test]
+        fn test_display_expr() {
+            let tokens1 = vec![Num(5.0), Op(Add), Fn(Sin(vec![Num(3.15)])), Op(LPar), Num(3.0), Op(Sub), Id(String::from("a")), Op(RPar)];
+
+            assert_eq!("5+\\sin(3.15)(3-a)".to_string(), display_expr(&tokens1));
+        }
+
+        #[test]
         fn test_tokenize() {
             let expr1 = "6^8*(4-1)*(3%2+(4*2))";
             let expr2 = "abc123%^*";
+            let expr3 = "1";
 
             assert_eq!(
                 tokenize(expr1).unwrap(),
@@ -809,7 +899,12 @@ pub mod calc {
                     Op(Exp),
                     Op(Mul),
                 ]
-            )
+            );
+
+            assert_eq!(
+                tokenize(expr3).unwrap(),
+                vec![Num(1.0)],
+            );
         }
 
         #[test]
