@@ -18,12 +18,17 @@ cargo add m_calc
 
 Parse a string into a vector of tokens, and calculate the vector of tokens.
 
-```rs
+```rust
+use m_calc::{tokenize, calculate};
+use std::collections::HashMap;
+
 let tokens = tokenize("2*3^(4-2)+14%3").unwrap();
 
-let context = HashMap::new(); // The `context` is where variable assignments are stored
+let mut context = HashMap::new(); // The `context` is where variable assignments are stored
 
 let res = calculate(&tokens, &mut context).unwrap();
 
-println!("{}", res.display()); // `display` is a method of `Token`s that displays it as a simple expression (like `20`)
+println!("{}", res.display()); // `display` is a method of `Token`s that displays it as a simple expression (like `10`, or `a`)
+
+assert_eq!("20", res.display());
 ```

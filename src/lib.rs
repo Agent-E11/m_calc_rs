@@ -1,5 +1,4 @@
-// TODO: Include `README.md` in the doc tests
-// https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html#include-items-only-when-collecting-doctests
+// TODO: Create doc tests for all pub functions
 
 pub use calc::calculate;
 pub use calc::tokenize;
@@ -9,6 +8,7 @@ pub mod calc {
     use std::cmp::Ordering;
     use std::num::ParseFloatError;
     use std::collections::HashMap;
+    use std::convert::TryFrom;
 
 
     /// Creates a `String` representation of a `Vec<Token>`
@@ -1165,3 +1165,7 @@ pub mod calc {
         }
     }
 }
+
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDocTests;
