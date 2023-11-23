@@ -3,6 +3,8 @@
 pub use calc::calculate;
 pub use calc::tokenize;
 pub use calc::display_expr;
+pub use calc::{Token, Oper, Func};
+pub use calc::CalcErr;
 
 pub mod calc {
     use std::cmp::Ordering;
@@ -10,13 +12,69 @@ pub mod calc {
     use std::collections::HashMap;
     use std::convert::TryFrom;
 
-
     /// Creates a `String` representation of a `Vec<Token>`
-    pub fn display_expr(tokens: &Vec<Token>) -> String {
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use m_calc::{display_expr, Token, Oper};
+    /// 
+    /// let tokens = vec![
+    ///     Token::Num(2.0),
+    ///     Token::Op(Oper::Add),
+    ///     Token::Num(3.15),
+    ///     Token::Op(Oper::Mul),
+    ///     Token::Id("x".to_string()),
+    /// ];
+    /// 
+    /// assert_eq!("2+3.15*x", display_expr(&tokens));
+    /// 
+    /// use m_calc::Func;
+    /// 
+    /// let tokens = vec![
+    ///     Token::Fn(Func::Sin(vec![
+    ///         Token::Num(2.11),
+    ///         Token::Op(Oper::Add),
+    ///         Token::Num(1.04),
+    ///     ])),
+    /// ];
+    /// 
+    /// assert_eq!("\\sin(2.11+1.04)", display_expr(&tokens));
+    /// ```
+    pub fn display_expr(tokens: &[Token]) -> String {
         tokens.iter().map(|token| token.display()).collect()
     }
 
     /// Constructs a `Vec<Token>` from a given `&str` representation of a mathematical expression
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use m_calc::{tokenize, Token, Func, Oper};
+    /// 
+    /// let tokens = tokenize("2+3.15*x%(\\sin(3.14)+1)").unwrap();
+    /// 
+    /// assert_eq!(
+    ///     vec![
+    ///         Token::Num(2.0),
+    ///         Token::Op(Oper::Add),
+    ///         Token::Num(3.15),
+    ///         Token::Op(Oper::Mul),
+    ///         Token::Id("x".to_string()),
+    ///         Token::Op(Oper::Mod),
+    ///         Token::Op(Oper::LPar),
+    ///             Token::Op(Oper::FnStart),
+    ///             Token::Id("sin".to_string()),
+    ///             Token::Op(Oper::LPar),
+    ///             Token::Num(3.14),
+    ///             Token::Op(Oper::RPar),
+    ///             Token::Op(Oper::Add),
+    ///             Token::Num(1.0),
+    ///         Token::Op(Oper::RPar),
+    ///     ],
+    ///     tokens
+    /// );
+    /// ```
     pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcErr> {
 
         let mut tokens: Vec<Token> = Vec::new();
