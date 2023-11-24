@@ -1,4 +1,5 @@
 // TODO: Create doc tests for all pub functions
+// TODO: Delete all debug `println`s
 
 pub use calc::calculate;
 pub use calc::tokenize;
@@ -863,7 +864,7 @@ pub mod calc {
 
     /// Represents possible errors when calculating
     #[derive(Debug)]
-    pub struct CalcErr(String);
+    pub struct CalcErr(pub String);
     impl From<ParseFloatError> for CalcErr {
         fn from(value: ParseFloatError) -> Self {
             CalcErr(value.to_string())
