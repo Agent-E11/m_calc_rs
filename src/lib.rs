@@ -736,8 +736,10 @@ pub mod calc {
             }.to_string()
         }
     }
-    impl From<&str> for Oper {
-        fn from(value: &str) -> Self {
+    impl TryFrom<&str> for Oper {
+        type Error = CalcErr;
+
+        fn try_from(value: &str) -> Result<Self, Self::Error> {
             match value {
                 "(" => Ok(Self::LPar),
                 ")" => Ok(Self::RPar),
