@@ -4,6 +4,7 @@
 pub use calc::calculate;
 pub use calc::tokenize;
 pub use calc::display_expr;
+pub use calc::init_logger;
 pub use calc::{Token, Oper, Func};
 pub use calc::CalcErr;
 
@@ -12,6 +13,16 @@ pub mod calc {
     use std::num::ParseFloatError;
     use std::collections::HashMap;
     use std::convert::TryFrom;
+    use env_logger::Env;
+    use log::{error, warn, info, debug, trace};
+
+    pub fn init_logger(log_var: &str, style_var: &str) {
+        let env = Env::default()
+            .filter_or(log_var, "error")
+            .write_style_or(style_var, "always");
+
+        env_logger::init_from_env(env);
+    }
 
     /// Creates a `String` representation of a `Vec<Token>`
     /// 
@@ -77,6 +88,7 @@ pub mod calc {
     /// );
     /// ```
     pub fn tokenize(expr: &str) -> Result<Vec<Token>, CalcErr> {
+        debug!("started `tokenize` with string: `{expr}`");
 
         let mut tokens: Vec<Token> = Vec::new();
         let mut last_processed: i32 = -1;
@@ -97,41 +109,47 @@ pub mod calc {
                     // If it is a number, walk through the next characters until it is not a number, 
                     // then add that slice to `tokens` as a `Token::Num`
                     while indx_char.1.is_numeric() || indx_char.1 == '.' {
-                        println!("(I, C): `{indx_char:?}`");
+                        debug!("index: `{}`, char: `{}`", indx_char.0, indx_char.1);
                         last_processed = indx_char.0 as i32;
                         indx_char = match indcs_chars.next() {
                             Some(i_c) => i_c,
                             None => break,
                         };
                     }
-                    tokens.push(Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?));
+                    let num_token = Token::Num(expr[index..last_processed as usize + 1].parse::<f32>()?);
+                    debug!("adding number to tokens: `{}`", num_token);
+                    tokens.push(num_token);
                 },
                 a if a.is_alphabetic() => {
                     // If it is a letter, walk through the next characters until it is not a letter, 
                     // then add that slice to `tokens` as a `Token::Id`
                     while indx_char.1.is_alphabetic() {
-                        println!("(I, C): `{indx_char:?}`");
+                        debug!("index: `{}`, char: `{}`", indx_char.0, indx_char.1);
                         last_processed = indx_char.0 as i32;
                         indx_char = match indcs_chars.next() {
                             Some(i_c) => i_c,
                             None => break,
                         };
                     }
-                    tokens.push(Token::Id(expr[index..last_processed as usize + 1].to_owned()))
+                    let id_token = Token::Id(expr[index..last_processed as usize + 1].to_owned());
+                    debug!("adding id to tokens: `{}`", id_token);
+                    tokens.push(id_token);
                 },
                 o if !o.is_alphabetic() && !o.is_numeric() => {
                     // If it neither a number, nor a letter,
                     // add the _single_ character to `tokens` as a `Token::Op`
-                    println!("(I, C): `{indx_char:?}`");
+                    debug!("index: `{}`, char: `{}`", indx_char.0, indx_char.1);
                     last_processed = indx_char.0 as i32;
-                    tokens.push(Token::Op(Oper::from(&expr[index..last_processed as usize + 1])))
+                    let oper_token = Token::Op(Oper::try_from(&expr[index..last_processed as usize + 1])?);
+                    debug!("adding operator to tokens: `{}`", oper_token);
+                    tokens.push(oper_token);
                 },
                 // If it is none of these, return an error
                 _ => return Err(CalcErr::from("invalid character in expression")),
             }
         }
 
-        println!("Token list: {tokens:?}");
+        debug!("returning from `tokenize` with tokens: `{:?}`", tokens);
         Ok(tokens)
     }
 
@@ -437,6 +455,7 @@ pub mod calc {
     /// Takes a `Vec<Token>` and a `Hashmap<String, Vec<Token>>`.
     /// Takes all the assignment expressions in the `Vec<Token>`,
     /// deletes them and converts it into a key value pair in the `Hashmap<String, Vec<Token>>`
+    // FIXME: If a variable is assigned to itself (e.g. `a = a`), it will break the substitution
     fn parse_assignment(tokens: Vec<Token>, context: &mut HashMap<String, Vec<Token>>) -> Result<Vec<Token>, CalcErr> {
         let exprs = tokens.split(|t| t == &Token::Op(Oper::LnBr));
         let mut new_tokens: Vec<Token> = Vec::new();
@@ -717,21 +736,23 @@ pub mod calc {
             }.to_string()
         }
     }
-    impl From<&str> for Oper {
-        fn from(value: &str) -> Self {
+    impl TryFrom<&str> for Oper {
+        type Error = CalcErr;
+
+        fn try_from(value: &str) -> Result<Self, Self::Error> {
             match value {
-                "(" => Self::LPar,
-                ")" => Self::RPar,
-                "^" => Self::Exp,
-                "*" => Self::Mul,
-                "/" => Self::Div,
-                "%" => Self::Mod,
-                "+" => Self::Add,
-                "-" => Self::Sub,
-                "=" => Self::Eql,
-                ";" => Self::LnBr,
-                "\\" => Self::FnStart,
-                _ => panic!(),
+                "(" => Ok(Self::LPar),
+                ")" => Ok(Self::RPar),
+                "^" => Ok(Self::Exp),
+                "*" => Ok(Self::Mul),
+                "/" => Ok(Self::Div),
+                "%" => Ok(Self::Mod),
+                "+" => Ok(Self::Add),
+                "-" => Ok(Self::Sub),
+                "=" => Ok(Self::Eql),
+                ";" => Ok(Self::LnBr),
+                "\\" => Ok(Self::FnStart),
+                o => Err(CalcErr(format!("invalid character for an `Oper`: `{o}`"))),
             }
         }
     }
