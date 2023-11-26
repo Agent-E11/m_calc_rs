@@ -1,3 +1,4 @@
+// TODO: Allow cases like `1+(-1)` in `calculate`
 // TODO: Create doc tests for all pub functions
 // TODO: Delete all debug `println`s
 
@@ -154,11 +155,13 @@ pub mod calc {
     }
 
     /// Generate a `Token` from a given `&Vec<Token>`
+    // TODO: Create doc tests
     pub fn simple_calc(tokens: &Vec<Token>) -> Result<Token, CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
+        debug!("starting `simple_calc` with tokens: `{tokens:?}`");
 
         let token_values = extract_token_values(tokens)?;
-        println!("Tokens values passed to `simple_calc`: {token_values:?}");
+        debug!("values extracted from tokens: {token_values:?}");
 
         let left = token_values.0;
         let right = token_values.2;
@@ -178,14 +181,17 @@ pub mod calc {
             Oper::FnStart => Err(CalcErr::from("`\\` is an invalid calculation operator")),
         };
 
-        println!("Result of `simple_calc`: {res:?}");
+        debug!("finished `simple_calc` with value: `{res:?}`");
         res
     }
 
     /// Takes a `Vec<Token>` and converts all occurrences of division and subtraction to their equivalents in multiplication and addition
+    // TODO: Create doc tests
     pub fn convert_div_sub(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
         let mut tokens = tokens;
+
+        debug!("starting `convert_div_sub` with tokens: `{tokens:?}`");
         
         let mut i = 0;
         loop {
@@ -197,23 +203,33 @@ pub mod calc {
             if let Token::Op(o) = token {
                 match o {
                     Oper::Div => {
-                        println!("Div found at `{i}`");
+                        debug!("found division at index: `{i}`");
                         match tokens[i+1].clone() {
                             Token::Num(n) => {
+                                debug!("changing `{}` at `{}` to `Op(Mul)`", tokens[i], i);
+                                debug!("inverting `{}` at `{}` to `{}`", n, i+1, 1.0/n);
                                 tokens[i] = Token::Op(Oper::Mul);
                                 tokens[i+1] = Token::Num(1.0/n);
                             },
-                            _ => return Err(CalcErr(format!("token at index `{}` (after `/`) is not a `Token::Num`", i + 1)))
+                            _ => {
+                                debug!("token at index `{}` (after `/`) is not a `Token::Num`", i+1);
+                                return Err(CalcErr(format!("token at index `{}` (after `/`) is not a `Token::Num`", i+1)));
+                            },
                         }
                     },
                     Oper::Sub => {
-                        println!("Sub found at `{i}`");
+                        debug!("found subtraction at index: `{i}`");
                         match tokens[i+1].clone() {
                             Token::Num(n) => {
+                                debug!("changing `{}` at `{}` to `Op(Add)`", tokens[i], i);
+                                debug!("inverting `{}` at `{}` to `{}`", n, i+1, Token::Num(-n));
                                 tokens[i] = Token::Op(Oper::Add);
                                 tokens[i+1] = Token::Num(-n);
                             },
-                            _ => return Err(CalcErr(format!("token at index `{}` (after `-`) is not a `Token::Num`", i + 1)))
+                            _ => {
+                                debug!("token at index `{}` (after `-`) is not a `Token::Num`", i+1);
+                                return Err(CalcErr(format!("token at index `{}` (after `-`) is not a `Token::Num`", i+1)))
+                            },
                         }
                     },
                     _ => (),
@@ -223,34 +239,39 @@ pub mod calc {
             i += 1;
         }
 
+        debug!("finished `convert_div_sub` with tokens: `{:?}`", tokens);
         Ok(tokens)
     }
 
     /// Takes a `Vec<Token>` and replaces all occurrences of `Op(FnStart), Id(), Op(LPar), ... , Op(RPar)` with `Fn(Func(...))`
     fn parse_functions(mut tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         let mut i = 0;
-        println!("\nstarting function parse");
-        loop {
+        debug!("starting `parse_functions` with tokens: `{tokens:?}`");
 
+        loop {
             // Get current token, break if end of `Vec`
             match tokens.get(i) {
                 None => break,
                 Some(token) => {
-                    println!("Element `{token}` at index `{i}` of vec `{tokens:?}`");
+                    debug!("token `{token}` at index `{i}`");
                     // Check to see if the current token is a function start operator, if it isn't, do nothing
                     if token == &Token::Op(Oper::FnStart) {
-                        println!("starting function parse at `{i}`");
+                        debug!("found function start at `{i}`, starting parse");
                         // `id_str` is the string contained in the next token. If the next token is not a `Token::Id` return an error
                         let id_str = match tokens.get(i+1).cloned() {
-                            None => return { println!("error: no token after `FnStart`"); Err(CalcErr::from("unexpected end of `Vec`")) },
+                            None => { 
+                                error!("unexpected end of tokens after function start");
+                                return Err(CalcErr::from("unexpected end of `Vec`"));
+                            },
                             Some(t) => if let Token::Id(id) = t {
-                                println!("`id_str` is `{id}`");
+                                debug!("function's id is `{id}`");
                                 id
                             } else {
                                 return Err(CalcErr(format!("`{}` is an invalid function id", tokens.get(i+1).unwrap())));
                             }
                         };
                         // `func_tokens` is the `Vec<Token>` to be passed into the `Func`
+                        debug!("getting tokens to be passed to the function");
                         let func_tokens: Vec<Token> = if let Some(t) = tokens.get(i+2) {
                             if t == &Token::Op(Oper::LPar) {
                                 let start = i + 3;
@@ -259,7 +280,10 @@ pub mod calc {
                                 // Loop through elements inside the parentheses
                                 loop {
                                     match tokens.get(end) {
-                                        None => return Err(CalcErr::from("unexpected end of `Vec`")),
+                                        None => { 
+                                            error!("expected closing parentheses before end of tokens");
+                                            return Err(CalcErr::from("unexpected end of `Vec`"));
+                                        },
                                         Some(t) => if let Token::Op(o) = t {
                                             // Increase/decrease `open_parens` if the `Op` is a parentheses
                                             match o {
@@ -272,6 +296,7 @@ pub mod calc {
                                     if open_parens <= 0 {
                                         // If all the parentheses are closed,
                                         // break and assign the contained `Vec` to `func_tokens` (including parentheses)
+                                        debug!("all parentheses have been closed, deleting index `{}` to `{}`", start-1, end+1);
                                         break tokens.drain(start-1..end+1).collect();
                                     }
                                     end += 1;
@@ -281,14 +306,14 @@ pub mod calc {
                                 return Err(CalcErr::from("missing open parentheses after function id"));
                             }
                         } else {
-                            println!("no token after `Id`");
                             return Err(CalcErr::from("unexpected end of `Vec`"));
                         };
 
-                        println!("`func_tokens` is `{func_tokens:?}`");
+                        debug!("tokens passed into the function are `{func_tokens:?}`");
                         // Get the index of the first `Op(FnStart)` (this is the one currently being parsed)
                         let func_index = tokens.iter().position(|t| t == &Token::Op(Oper::FnStart)).unwrap();
                         // Delete the `Op(FnStart)` and `Id()`
+                        debug!("deleting index `{}` to `{}`", func_index, func_index+2);
                         let _ = tokens.drain(func_index..func_index+2);
                         // Insert `Fn`
                         tokens.insert(
@@ -306,27 +331,30 @@ pub mod calc {
             }
             i += 1;
         }
+        debug!("finished `parse_functions` with tokens: `{tokens:?}`");
         Ok(tokens)
     }
 
     /// Takes a `Vec<Token>` and calculates all occurrences of a `&str` operator
     fn calculate_operator(tokens: Vec<Token>, operators: &[Oper]) -> Result<Vec<Token>, CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
+        debug!("starting `calculate_operator` with tokens: `{:?}`, and operators: `{:?}`", tokens, operators);
 
         let mut tokens = tokens;
         let mut i = 0;
         loop {
             if tokens.get(i).is_none() {
+                debug!("reached end of tokens at `{}`", i);
                 break;
             }
             if let Token::Op(o) = &tokens[i] {
-                println!("Operator `{o}` at `{i}`");
+                debug!("operator `{o}` at `{i}`");
                 if operators.contains(o) {
-                    println!("Operator matches");
-                    println!("Calculating: {:?}", &tokens[i-1..i+2]);
+                    debug!("operator matches");
+                    debug!("calculating: {:?}", &tokens[i-1..i+2]);
                     let res = simple_calc(&Vec::from(&tokens[i-1..i+2]))?;
-                    println!("Result: {res:?}");
-                    println!("Deleting: {:?}", &tokens[i-1..i+2]);
+                    debug!("result: {res:?}");
+                    debug!("deleting: {:?}", &tokens[i-1..i+2]);
 
                     tokens.drain(i-1..i+2);
                     tokens.insert(i-1, res);
@@ -334,67 +362,69 @@ pub mod calc {
                     i = 0;
                     continue;
                 }
+                debug!("operator doesn't match, continuing");
             }
             i += 1;
         }
+        debug!("finished `calculate_operator` with tokens: `{:?}`", tokens);
         Ok(tokens)
     }
 
     /// Takes a `&Vec<Token>` and computes the mathematical expression and returns the resulting number wrapped in a `Token::Num()`
+    // TODO: Create doc tests
     pub fn calculate(tokens: &Vec<Token>, context: &mut HashMap<String, Vec<Token>>) -> Result<Token, CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
         let mut tokens = tokens.clone();
 
-        println!("Started `calculate`");
+        debug!("starting `calculate` with tokens `{:?}` and context `{:?}`", tokens, context);
 
         // Delete trailing `Op(LnBr)`
         if tokens.ends_with(&[Token::Op(Oper::LnBr)]) {
             tokens.pop();
-            println!("Deleted trailing `Op(LnBr)`");
+            debug!("deleted trailing `Op(LnBr)`");
         }
-
-        // Check syntax, return `Err` if any
-        simple_syntax_check(&tokens)?;
-
-        println!("`context` before assignments: `{context:?}`");
-        let tokens = parse_assignment(tokens, context)?;
-        println!("`context` after assignments: `{context:?}`");
+        
+        tokens = parse_assignment(tokens, context)?;
         
         // Make substitutions
-        let mut tokens = substitute_assignments(tokens, context)?;
+        tokens = substitute_assignments(tokens, context)?;
         
-        if tokens.is_empty() { return Ok(Token::Empty); }
+        if tokens.is_empty() {
+            debug!("empty tokens, returning");
+            return Ok(Token::Empty);
+        }
 
-        // Pass 1: Parse each function, calculate each function
-        tokens = parse_functions(tokens)?.into_iter().map(|t| {
+        // Pass 1: Parse the functions, calculate each function
+        tokens = parse_functions(tokens)?;
+        debug!("calculating each function");
+        tokens = tokens.into_iter().map(|t| {
             if let Token::Fn(f) = t {
+                debug!("found function: `{f:?}`, calculating");
                 f.calc(context)
             } else {
                 Ok(t)
             }
         }).collect::<Result<Vec<Token>, CalcErr>>()?;
+        debug!("finished calculating functions with tokens: `{:?}`", tokens);
 
         // Pass 2: Calculate and substitute parentheses
-        println!("Starting \"Parentheses\" pass");
+        debug!("started parsing and calculating parentheses");
         let mut i = 0;
         loop {
 
             // Check if index is out of bounds, get token
             let token = match tokens.get(i) {
                 None => {
-                    println!("Index out of bounds. Going to next pass");
                     break;
                 },
                 Some(t) => t.clone(),
             };
 
-            print!("\n\n");
-            println!("Tokens: {tokens:?}");
-            println!("Token at index `{i}`: {:?}", token);
+            debug!("token at index `{}`: {:?}", i, token);
 
             // Find an open parentheses
             if token == Token::Op(Oper::LPar) {
-                println!("Open parentheses at {i}");
+                debug!("open parentheses at `{i}`");
                 let mut j = i;
 
                 // Find index of closing parentheses
@@ -413,15 +443,15 @@ pub mod calc {
                     }
                 }
 
-                println!("Closing parentheses at {j}");
+                debug!("closing parentheses at {j}");
 
                 let subsection = &Vec::from(&tokens[i+1..j]);
-                println!("Subsection passed to `calculate`: {subsection:?}");
+                debug!("calculating subsection: `{subsection:?}`");
 
                 // Calculate subsection
                 let res = calculate(subsection, context)?;
 
-                println!("Range to be deleted: {:?}", i..j+1);
+                debug!("range to be deleted: {:?}", i..j+1);
 
 
                 // Replace subsection with calculation
@@ -435,86 +465,102 @@ pub mod calc {
 
             i += 1;
         }
+        debug!("finished calculating parentheses with tokens: `{:?}`", tokens);
 
         tokens = convert_implicit_mul(tokens)?;
 
+        // Check syntax, return `Err` if any
+        simple_syntax_check(&tokens)?;
+
         // Pass 3: operators
-        println!("Starting \"Operator\" pass");
+        debug!("parsing operators");
 
-        println!("Tokens before pass: {tokens:?}");
+        debug!("tokens before pass: {tokens:?}");
         tokens = calculate_operator(tokens, &[Oper::Exp])?;
-        println!("After `^`: {tokens:?}");
+        debug!("after `^`: {tokens:?}");
         tokens = calculate_operator(tokens, &[Oper::Mul, Oper::Div, Oper::Mod])?;
-        println!("After `*, /, %`: {tokens:?}");
+        debug!("after `*, /, %`: {tokens:?}");
         tokens = calculate_operator(tokens, &[Oper::Add, Oper::Sub])?;
-        println!("After `+, -`: {tokens:?}");
+        debug!("after `+, -`: {tokens:?}");
 
-        Ok(tokens[0].clone())
+
+        let res = tokens[0].clone();
+        debug!("finished `calculate` with result: `{}`", res);
+        Ok(res)
     } 
 
     /// Takes a `Vec<Token>` and a `Hashmap<String, Vec<Token>>`.
     /// Takes all the assignment expressions in the `Vec<Token>`,
     /// deletes them and converts it into a key value pair in the `Hashmap<String, Vec<Token>>`
-    // FIXME: If a variable is assigned to itself (e.g. `a = a`), it will break the substitution
     fn parse_assignment(tokens: Vec<Token>, context: &mut HashMap<String, Vec<Token>>) -> Result<Vec<Token>, CalcErr> {
         let exprs = tokens.split(|t| t == &Token::Op(Oper::LnBr));
         let mut new_tokens: Vec<Token> = Vec::new();
 
-        println!("Starting `parse_assignments`");
+        debug!("starting `parse_assignments` with tokens `{:?}` and context `{:?}`", tokens, context);
+        debug!("the tokens are broken into `{:?}` expressions: `{:?}`", exprs.clone().count(), exprs);
 
         for expr in exprs {
-            println!("Expression: `{expr:?}`");
+            debug!("expression: `{expr:?}`");
             // Validate syntax
             // Check if empty
             if expr.is_empty() { continue; }
 
             match expr.iter().filter(|&t| *t == Token::Op(Oper::Eql)).count().cmp(&1) {
                 // If there is more than 1 `Op(Eql)`, return an error
-                Ordering::Greater => return Err(CalcErr(format!("multiple `Op(Eql)` in expression `{}`", "UNIMPLEMENTED"))),
+                Ordering::Greater => {
+                    debug!("multiple `Op(Eql)` in expression: `{:?}`", expr);
+                    return Err(CalcErr(format!("multiple assignments in expression: `{:?}`", expr)));
+                },
                 // If it is not an assignment, add the expression to `new_tokens` (it will be calculated later)
                 Ordering::Less => {
+                    debug!("no assignments in expression: `{:?}`, appending to tokens", expr);
                     new_tokens.append(&mut expr.to_vec());
                     new_tokens.push(Token::Op(Oper::LnBr))
                 },
                 // If there is 1 `Op(Eql)`, parse the assignment expression
                 Ordering::Equal => {
-                    println!("There is 1 assignment in `expr`");
+                    debug!("1 assignment in expression: `{:?}`, parsing", expr);
                     let id = if let Token::Id(i) = &expr[0] {
-                        println!("The `id` is `{i}`");
+                        debug!("the id is `{i}`");
                         i
                     } else {
                         return Err(CalcErr::from("first token of assignment expression must be an `Id`"));
                     };
                     if expr[1] != Token::Op(Oper::Eql) {
-                        println!("Second token must be `Op(Eql)` not `{:?}`", expr[1]);
-                        return Err(CalcErr(format!("second token of assignment expression must be an `Op(Eql)`, not `{}`", expr[1])));
+                        debug!("second token must be `Op(Eql)` not `{:?}`", expr[1]);
+                        return Err(CalcErr(format!("second token of assignment expression must be `=`, not `{}`", expr[1])));
                     }
 
-                    let insert_value = if expr[2..expr.len()].iter().any(|t| matches!(t, Token::Id(_))) {
-                        println!("contains an `Id`, not calculating");
+
+                    let value = &expr[2..expr.len()];
+                    debug!("value is `{:?}`", value);
+                    let insert_value = if value.iter().any(|t| matches!(t, Token::Id(_))) {
+                        debug!("contains an `Id`, not calculating");
                         expr[2..expr.len()].to_vec()
                     } else {
-                        println!("Does not contain an `Id`, calculating");
+                        debug!("does not contain an `Id`, calculating");
                         [calculate(&expr[2..expr.len()].to_vec(), context)?].to_vec()
                     };
 
-                    println!("The value assigned to `{id}` is `{insert_value:?}`");
+                    debug!("the value assigned to `{id}` is `{insert_value:?}`");
 
                     // Add the calculated value to the `context`
                     context.insert(
                         id.to_string(), 
                         insert_value,
                     );
-                    println!("Context: `{context:?}`");
+                    debug!("context after assignment: `{context:?}`");
                 }
             }
         }
 
-        println!("New tokens: `{new_tokens:?}`");
+        debug!("finished `parse_assignment` with tokens: `{new_tokens:?}`, and context: `{context:?}`");
         Ok(new_tokens)
     }
 
     /// Takes a `Vec<Token>` and replaces all `Id`s with their values defined in the given `context`
+    // FIXME: If a variable is assigned to itself (e.g. `a = a`), it will break the substitution
+    // TODO: Add logs
     fn substitute_assignments(tokens: Vec<Token>, context: &HashMap<String, Vec<Token>>) -> Result<Vec<Token>, CalcErr> {
         let mut tokens = tokens;
 
@@ -562,6 +608,7 @@ pub mod calc {
     }
 
     /// Generates a `(f32, Oper, f32)` containing the same values as the given `&Vec<Token>`
+    // TODO: Add logs
     fn extract_token_values(tokens: &Vec<Token>) -> Result<(f32, Oper, f32), CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
 
@@ -594,6 +641,7 @@ pub mod calc {
         Ok((*token0, token1.clone(), *token2))
     }
 
+    // TODO: Add logs
     fn convert_implicit_mul(tokens: Vec<Token>) -> Result<Vec<Token>, CalcErr> {
         // Return error if `tokens` contains parentheses
         if tokens.contains(&Token::Op(Oper::LPar)) || tokens.contains(&Token::Op(Oper::RPar)) {
@@ -633,6 +681,7 @@ pub mod calc {
 
     /// Does some simple syntax checks on a `Vec<Token>` and returns an error if there are any mistakes
     /// 
+    // TODO: Add logs
     fn simple_syntax_check(tokens: &[Token]) -> Result<(), CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
 
@@ -777,6 +826,7 @@ pub mod calc {
         Tan(Vec<Token>),
     }
     impl Func {
+        // TODO: Add logs
         pub fn calc(&self, context: &mut HashMap<String, Vec<Token>>) -> Result<Token, CalcErr> {
             let error = Err(CalcErr::from("`calculate` did not return a `Token::Num`"));
             match self {
@@ -833,6 +883,7 @@ pub mod calc {
     impl TryFrom<(&str, Vec<Token>)> for Func {
         type Error = CalcErr;
 
+        // TODO: Add logs
         fn try_from(value: (&str, Vec<Token>)) -> Result<Self, Self::Error> {
             match value.0.to_lowercase().as_str() {
                 "sqrt" => Ok(Func::Sqrt(value.1)),
