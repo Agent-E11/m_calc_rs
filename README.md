@@ -1,5 +1,7 @@
 # m_calc
 
+> !!! this crate is under development and future updates will include breaking changes !!!
+
 [`m_calc`](https://crates.io/crates/m_calc) is a Rust crate for calculating mathematical expressions in strings.
 
 For instance, a string like `"2*3^(4-2)+14%3"` should be calculated to `20`

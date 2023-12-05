@@ -1,21 +1,26 @@
 use std::io;
 use std::collections::HashMap;
-use log::{error, warn, info, debug, trace};
+use std::env;
+use log::{error, info};
 
 use m_calc::{calculate, tokenize, init_logger, CalcErr};
 
 fn main() {
-    init_logger("RUST_LOG", "");
+
+    let args: Vec<_> = env::args().collect();
+    let debug = args.contains(&"--debug-logger".to_string()); // Is `&"s".to_string()` unnecessary?
+
+    init_logger("RUST_LOG", "", debug);
     let mut buf = String::new();
     let mut context = HashMap::new();
 
     loop {
-        println!("type `/q` to quit");
+        println!("type `:q` to quit");
         io::stdin().read_line(&mut buf).unwrap();
 
         buf = buf.trim().to_string();
 
-        if buf == "/q" {
+        if buf == ":q" {
             break;
         }
 

@@ -1,6 +1,5 @@
 // TODO: Allow cases like `1+(-1)` in `calculate`
 // TODO: Create doc tests for all pub functions
-// TODO: Delete all debug `println`s
 
 pub use calc::calculate;
 pub use calc::tokenize;
@@ -17,12 +16,20 @@ pub mod calc {
     use env_logger::Env;
     use log::{error, warn, info, debug, trace};
 
-    pub fn init_logger(log_var: &str, style_var: &str) {
+    pub fn init_logger(log_var: &str, style_var: &str, debug: bool) {
         let env = Env::default()
             .filter_or(log_var, "error")
             .write_style_or(style_var, "always");
 
         env_logger::init_from_env(env);
+
+        if debug {
+            error!("`error`s can be seen");
+            warn!("`warn`s can be seen");
+            info!("`info`s can be seen");
+            debug!("`debug`s can be seen");
+            trace!("`trace`s can be seen");
+        }
     }
 
     /// Creates a `String` representation of a `Vec<Token>`
@@ -567,22 +574,23 @@ pub mod calc {
         if tokens.contains(&Token::Op(Oper::Eql)) {
             return Err(CalcErr::from("cannot substitute assignments for an expression containing `Op(Eql)`"));
         }
+        debug!("started `substitute_assignments` with tokens `{:?}` and context `{:?}`", tokens, context);
 
         let mut i = 0;
         // Loop through all tokens
         loop {
-            println!("Token at `{i}`: `{:?}`", tokens.get(i));
+            debug!("token: `{:?}`, at index: `{:?}`", tokens.get(i), i);
             match tokens.get(i) {
                 None => break,
                 Some(t) => if let Token::Id(s) = t {
                     // If the token is an `Id`, get its associated value in `context`
-                    println!("The token is `Some`");
                     let value = match context.get(s) {
                         None => {
+                            debug!("variable `{}` is not assigned, continuing", s);
                             i += 1;
                             continue;
                         },
-                        Some(v) => {println!("Token is: `{v:?}`"); v},
+                        Some(v) => {debug!("value assigned to `{}` is: `{:?}`", s, v); v},
                     };
 
                     // Enclose the value in parentheses
@@ -592,12 +600,10 @@ pub mod calc {
 
                     // Substitute the `Id` for the `Id`s value
                     tokens.splice(i..i+1, enclosed.clone());
-                    println!("Substituted:\n`{tokens:?}`");
+                    debug!("substituted:\n`{tokens:?}`");
 
                     i = 0;
                     continue;
-                } else {
-                    println!("Token is not an `Id`");
                 }
             }
 
@@ -685,7 +691,7 @@ pub mod calc {
     fn simple_syntax_check(tokens: &[Token]) -> Result<(), CalcErr> {
         if tokens.is_empty() { return Err(CalcErr::from("length cannot be `0`")); }
 
-        println!("starting syntax check");
+        debug!("starting syntax check on tokens: `{:?}`", tokens);
 
         // Check dangling operators
         // Beginning
@@ -731,10 +737,10 @@ pub mod calc {
             return Err(CalcErr(format!("unclosed parentheses at `{last_paren}`")));
         }
         
-        println!("tokens: {tokens:?}");
+        debug!("checking tokens `{tokens:?}` for multiple operators in a row");
         // Check for 2 `Op` in a row
         for (i, token) in tokens.iter().enumerate() {
-            println!("`{token}` at `{i}`");
+            debug!("`{token}` at `{i}`");
             if let Token::Op(op1) = token {
                 match op1 {
                     Oper::RPar | Oper::LnBr => continue,
@@ -828,7 +834,7 @@ pub mod calc {
     impl Func {
         // TODO: Add logs
         pub fn calc(&self, context: &mut HashMap<String, Vec<Token>>) -> Result<Token, CalcErr> {
-            let error = Err(CalcErr::from("`calculate` did not return a `Token::Num`"));
+            let error = Err(CalcErr::from("`calculate` did not return a `Token::Num`")); // TODO: This might break things in the future when `calculate` can return a `Vac<Token>`
             match self {
                 Self::Sqrt(v) => if let Token::Num(n) = calculate(v, context)? {
                     Ok(Token::Num(n.sqrt()))
@@ -883,7 +889,6 @@ pub mod calc {
     impl TryFrom<(&str, Vec<Token>)> for Func {
         type Error = CalcErr;
 
-        // TODO: Add logs
         fn try_from(value: (&str, Vec<Token>)) -> Result<Self, Self::Error> {
             match value.0.to_lowercase().as_str() {
                 "sqrt" => Ok(Func::Sqrt(value.1)),
@@ -1091,19 +1096,19 @@ pub mod calc {
             let tokens10 = vec![Id(String::from("b")), Op(Eql), Num(1.0), Op(Add), Num(2.0), Op(LnBr), Num(4.0), Op(Mul), Id(String::from("b"))]; // Order of operations
             let tokens11 = vec![Id(String::from("a")), Op(Eql), Num(10.0)]; // Reassignment and empty calculation
 
-            assert_eq!(Token::Num(8.0), calculate(&tokens1, &mut context).unwrap()); println!("----- 1 -----"); // Order of operations
-            assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2, &mut context).unwrap()); println!("----- 2 -----"); // Very long and complicated
-            assert_eq!(Token::Num(12.0), calculate(&tokens3, &mut context).unwrap()); println!("----- 3 -----"); // Parentheses
-            assert_eq!(Token::Num(2.0), calculate(&tokens4, &mut context).unwrap()); println!("----- 4 -----"); // Unnecessary parentheses
-            assert_eq!(Token::Num(6.0), calculate(&tokens5, &mut context).unwrap()); println!("----- 5 -----"); // Implicit multiplication
-            assert_eq!(Token::Num(4.0), calculate(&tokens6, &mut context).unwrap()); println!("----- 6 -----"); // Functions
-            assert_eq!(Token::Num(3.0), calculate(&tokens7, &mut context).unwrap()); println!("----- 7 -----"); // Trailing `Op(LnBr)`
-            assert_eq!(Token::Num(3.0), calculate(&tokens8, &mut context).unwrap()); println!("----- 8 -----"); // Assign and calculate
+            assert_eq!(Token::Num(8.0), calculate(&tokens1, &mut context).unwrap()); // Order of operations
+            assert_eq!(Token::Num(3_843_199.8), calculate(&tokens2, &mut context).unwrap()); // Very long and complicated
+            assert_eq!(Token::Num(12.0), calculate(&tokens3, &mut context).unwrap()); // Parentheses
+            assert_eq!(Token::Num(2.0), calculate(&tokens4, &mut context).unwrap()); // Unnecessary parentheses
+            assert_eq!(Token::Num(6.0), calculate(&tokens5, &mut context).unwrap()); // Implicit multiplication
+            assert_eq!(Token::Num(4.0), calculate(&tokens6, &mut context).unwrap()); // Functions
+            assert_eq!(Token::Num(3.0), calculate(&tokens7, &mut context).unwrap()); // Trailing `Op(LnBr)`
+            assert_eq!(Token::Num(3.0), calculate(&tokens8, &mut context).unwrap()); // Assign and calculate
             assert_eq!(&vec![Num(20.0)], context.get("a").expect(""));
-            assert_eq!(Token::Num(100.0), calculate(&tokens9, &mut context).unwrap()); println!("----- 9 -----"); // Assignment substitutions
-            assert_eq!(Token::Num(12.0), calculate(&tokens10, &mut context).unwrap()); println!("----- 10 -----"); // Order of operations
+            assert_eq!(Token::Num(100.0), calculate(&tokens9, &mut context).unwrap()); // Assignment substitutions
+            assert_eq!(Token::Num(12.0), calculate(&tokens10, &mut context).unwrap()); // Order of operations
             assert_eq!(&vec![Num(3.0)], context.get("b").expect(""));
-            assert_eq!(Token::Empty, calculate(&tokens11, &mut context).unwrap()); println!("----- 11 -----"); // Reassignment and empty calculation
+            assert_eq!(Token::Empty, calculate(&tokens11, &mut context).unwrap()); // Reassignment and empty calculation
             assert_eq!(&vec![Num(10.0)], context.get("a").expect(""));
         }
 
