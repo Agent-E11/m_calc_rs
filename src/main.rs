@@ -1,9 +1,12 @@
 use std::io;
 use std::collections::HashMap;
 use std::env;
-use log::{error, info};
 
-use m_calc::{calculate, tokenize, init_logger, CalcErr};
+use m_calc::{calculate, tokenize, CalcErr};
+use m_calc::logging::{
+    init_logger,
+    {error, info}
+};
 
 fn main() {
 

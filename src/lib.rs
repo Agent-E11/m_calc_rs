@@ -1,36 +1,21 @@
 // TODO: Allow cases like `1+(-1)` in `calculate`
 // TODO: Create doc tests for all pub functions
+// TODO: Refactor code to use modules
 
 pub use calc::calculate;
 pub use calc::tokenize;
 pub use calc::display_expr;
-pub use calc::init_logger;
 pub use calc::{Token, Oper, Func};
 pub use calc::CalcErr;
+
+pub mod logging;
 
 pub mod calc {
     use std::cmp::Ordering;
     use std::num::ParseFloatError;
     use std::collections::HashMap;
     use std::convert::TryFrom;
-    use env_logger::Env;
-    use log::{error, warn, info, debug, trace};
-
-    pub fn init_logger(log_var: &str, style_var: &str, debug: bool) {
-        let env = Env::default()
-            .filter_or(log_var, "error")
-            .write_style_or(style_var, "always");
-
-        env_logger::init_from_env(env);
-
-        if debug {
-            error!("`error`s can be seen");
-            warn!("`warn`s can be seen");
-            info!("`info`s can be seen");
-            debug!("`debug`s can be seen");
-            trace!("`trace`s can be seen");
-        }
-    }
+    use log::{error, debug};
 
     /// Creates a `String` representation of a `Vec<Token>`
     /// 
