@@ -2,7 +2,8 @@ use std::io;
 use std::collections::HashMap;
 use std::env;
 
-use m_calc::{calculate, tokenize, CalcErr};
+use m_calc::{calculate, CalcErr};
+use m_calc::parse::tokenize;
 use m_calc::logging::{
     init_logger,
     {error, info}

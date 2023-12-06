@@ -1,4 +1,5 @@
 pub use env_logger;
+pub use log;
 pub use log::{error, warn, info, debug, trace};
 
 // TODO: Doc test

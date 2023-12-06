@@ -21,8 +21,10 @@ cargo add m_calc
 Parse a string into a vector of tokens, and calculate the vector of tokens.
 
 ```rust
-use m_calc::{tokenize, calculate};
 use std::collections::HashMap;
+
+use m_calc::calculate;
+use m_calc::parse::tokenize;
 
 let tokens = tokenize("2*3^(4-2)+14%3").unwrap();
 
